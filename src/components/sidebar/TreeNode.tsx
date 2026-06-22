@@ -155,7 +155,7 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
       <button
         onClick={handleToggle}
         onDoubleClick={handleDoubleClick}
-        className="flex w-full items-center gap-1 px-2 py-1 text-sm hover:bg-neutral-700"
+        className="flex w-full items-center gap-1 px-2 py-1 text-sm text-neutral-800 hover:bg-neutral-100"
         style={{ paddingLeft: `${8 + depth * 12}px` }}
       >
         {ref.isDirectory ? (
@@ -169,14 +169,14 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
         )}
 
         {ref.isDirectory ? (
-          <Folder size={14} className="text-blue-400" />
+          <Folder size={14} className="text-blue-500" />
         ) : (
-          <FileText size={14} className="text-neutral-400" />
+          <FileText size={14} className="text-neutral-500" />
         )}
 
-        <span className={`truncate ${ref.isDirectory ? '' : 'text-neutral-300'}`}>{ref.name}</span>
+        <span className={`truncate ${ref.isDirectory ? '' : 'text-neutral-700'}`}>{ref.name}</span>
 
-        {isLoading && <span className="ml-1 text-xs text-neutral-500">...</span>}
+        {isLoading && <span className="ml-1 text-xs text-neutral-400">...</span>}
       </button>
 
       {ref.isDirectory && isExpanded && children && (

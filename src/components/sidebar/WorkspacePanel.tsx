@@ -13,14 +13,14 @@ export function WorkspacePanel(): JSX.Element {
   }
 
   return (
-    <div className="border-b border-neutral-700 p-3">
+    <div className="border-b border-neutral-200 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
           Workspace
         </span>
         <button
           onClick={handleOpenFolder}
-          className="rounded p-1 hover:bg-neutral-700"
+          className="rounded p-1 text-neutral-600 hover:bg-neutral-100"
           title="Open folder"
         >
           <FolderOpen size={16} />
@@ -28,26 +28,26 @@ export function WorkspacePanel(): JSX.Element {
       </div>
 
       {workspace.roots.length === 0 ? (
-        <div className="text-xs text-neutral-500">No folders opened</div>
+        <div className="text-xs text-neutral-400">No folders opened</div>
       ) : (
         <ul className="space-y-1">
           {workspace.roots.map((root) => (
             <li
               key={root.id}
               className={`flex items-center justify-between rounded px-2 py-1 text-sm ${
-                activeRootId === root.id ? 'bg-neutral-700' : 'hover:bg-neutral-750'
+                activeRootId === root.id ? 'bg-blue-50 text-blue-700' : 'hover:bg-neutral-100'
               }`}
             >
               <button
                 onClick={() => setActiveRoot(root.id)}
                 className="flex flex-1 items-center gap-2 truncate text-left"
               >
-                <FolderOpen size={14} className="shrink-0 text-blue-400" />
+                <FolderOpen size={14} className="shrink-0 text-blue-500" />
                 <span className="truncate">{root.name}</span>
               </button>
               <button
                 onClick={() => removeRoot(root.id)}
-                className="rounded p-1 text-neutral-500 hover:bg-neutral-700 hover:text-neutral-200"
+                className="rounded p-1 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                 title="Remove root"
               >
                 <X size={12} />

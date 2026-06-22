@@ -26,7 +26,7 @@ export function ContextMenu({
 
   return (
     <div
-      className="fixed z-50 min-w-[160px] rounded border border-neutral-600 bg-neutral-800 py-1 shadow-lg"
+      className="fixed z-50 min-w-[160px] rounded border border-neutral-200 bg-white py-1 shadow-lg"
       style={{ left: x, top: y }}
       onMouseLeave={onClose}
     >
@@ -37,7 +37,7 @@ export function ContextMenu({
               onNewFile()
               onClose()
             }}
-            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-700"
+            className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
           >
             New File
           </button>
@@ -46,11 +46,11 @@ export function ContextMenu({
               onNewFolder()
               onClose()
             }}
-            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-700"
+            className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
           >
             New Folder
           </button>
-          <div className="my-1 border-t border-neutral-600" />
+          <div className="my-1 border-t border-neutral-200" />
         </>
       )}
       <button
@@ -58,20 +58,20 @@ export function ContextMenu({
           onRename()
           onClose()
         }}
-        className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-700"
+        className="block w-full px-3 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100"
       >
         Rename
       </button>
       <button
         onClick={() => setShowDanger(true)}
-        className="block w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-neutral-700"
+        className="block w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-neutral-100"
       >
         Delete
       </button>
 
       {showDanger && (
-        <div className="border-t border-neutral-600 px-3 py-2">
-          <p className="mb-2 text-xs text-neutral-400">
+        <div className="border-t border-neutral-200 px-3 py-2">
+          <p className="mb-2 text-xs text-neutral-500">
             Delete {ref.isDirectory ? 'folder' : 'file'} "{ref.name}"?
           </p>
           <div className="flex gap-2">
@@ -86,7 +86,7 @@ export function ContextMenu({
             </button>
             <button
               onClick={() => setShowDanger(false)}
-              className="flex-1 rounded bg-neutral-600 px-2 py-1 text-xs text-white hover:bg-neutral-500"
+              className="flex-1 rounded bg-neutral-200 px-2 py-1 text-xs text-neutral-800 hover:bg-neutral-300"
             >
               Cancel
             </button>

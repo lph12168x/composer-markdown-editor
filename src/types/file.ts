@@ -25,10 +25,13 @@ export interface FileRef {
 export interface Document {
   ref: FileRef
   content: string
+  rawContent: string
   originalContent: string
   modified: boolean
   loading: boolean
   error?: string
+  lastModifiedEditor: 'wysiwyg' | 'source' | null
+  hasNormalized: boolean
 }
 
 export interface FileStat {

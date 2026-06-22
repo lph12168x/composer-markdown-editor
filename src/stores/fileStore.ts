@@ -86,7 +86,9 @@ interface DocumentState {
   document: Document | null
   openDocument: (ref: FileRef, content: string) => void
   updateContent: (content: string) => void
-  markSaved: () => void
+  updateRawContent: (rawContent: string) => void
+  enterSourceMode: () => void
+  markSaved: (savedContent: string) => void
   closeDocument: () => void
 }
 
@@ -98,9 +100,12 @@ export const useDocumentStore = create<DocumentState>((set) => ({
       document: {
         ref,
         content,
+        rawContent: content,
         originalContent: content,
         modified: false,
-        loading: false
+        loading: false,
+        lastModifiedEditor: null,
+        hasNormalized: false
       }
     })
   },
@@ -108,24 +113,98 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   updateContent: (content: string) => {
     set((state) => {
       if (!state.document) return state
+
+      const doc = state.document
+      // The first call from the WYSIWYG editor is the initial normalization on mount.
+      if (!doc.hasNormalized) {
+        return {
+          document: {
+            ...doc,
+            content,
+            originalContent: content,
+            hasNormalized: true
+          }
+        }
+      }
+
+      if (content === doc.content) {
+        return state
+      }
+
       return {
         document: {
-          ...state.document,
+          ...doc,
           content,
-          modified: content !== state.document.originalContent
+          lastModifiedEditor: 'wysiwyg',
+          modified: content !== doc.originalContent
         }
       }
     })
   },
 
-  markSaved: () => {
+  updateRawContent: (rawContent: string) => {
     set((state) => {
       if (!state.document) return state
       return {
         document: {
           ...state.document,
-          originalContent: state.document.content,
+          rawContent,
+          content: rawContent,
+          lastModifiedEditor: 'source',
+          modified: rawContent !== state.document.originalContent
+        }
+      }
+    })
+  },
+
+  enterSourceMode: () => {
+    set((state) => {
+      if (!state.document) return state
+      const doc = state.document
+
+      // Source mode is authoritative when it was the last editor modified.
+      // Otherwise bring the current canonical content into the source view.
+      if (doc.lastModifiedEditor === 'source') {
+        return {
+          document: {
+            ...doc,
+            content: doc.rawContent
+          }
+        }
+      }
+
+      if (doc.lastModifiedEditor === 'wysiwyg') {
+        return {
+          document: {
+            ...doc,
+            rawContent: doc.content,
+            modified: doc.content !== doc.originalContent
+          }
+        }
+      }
+
+      // No edits yet: keep the raw file content in source view without marking modified.
+      return {
+        document: {
+          ...doc,
+          content: doc.rawContent,
           modified: false
+        }
+      }
+    })
+  },
+
+  markSaved: (savedContent: string) => {
+    set((state) => {
+      if (!state.document) return state
+      return {
+        document: {
+          ...state.document,
+          content: savedContent,
+          rawContent: savedContent,
+          originalContent: savedContent,
+          modified: false,
+          lastModifiedEditor: null
         }
       }
     })

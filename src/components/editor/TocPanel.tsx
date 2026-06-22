@@ -39,7 +39,7 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
 
   if (!document) {
     return (
-      <div className="flex h-full items-center justify-center text-xs text-neutral-500">
+      <div className="flex h-full items-center justify-center text-xs text-neutral-400">
         No document open
       </div>
     )
@@ -47,7 +47,7 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
 
   if (headings.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center text-xs text-neutral-500">
+      <div className="flex h-full items-center justify-center text-xs text-neutral-400">
         No headings
       </div>
     )
@@ -55,7 +55,7 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
 
   return (
     <div className="h-full overflow-auto p-3">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-500">
         Outline
       </div>
       <ul className="space-y-1">
@@ -66,7 +66,7 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
           >
             <button
               onClick={() => onHeadingClick?.(heading)}
-              className="w-full truncate text-left text-xs text-neutral-300 hover:text-blue-400"
+              className="w-full truncate text-left text-xs text-neutral-700 hover:text-blue-600"
               title={heading.text}
             >
               {heading.text}

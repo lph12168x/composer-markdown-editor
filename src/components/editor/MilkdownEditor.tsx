@@ -19,7 +19,10 @@ export function MilkdownEditor({ content, onChange }: EditorProps): JSX.Element 
 
     const crepe = new Crepe({
       root: container,
-      defaultValue: initialContentRef.current
+      defaultValue: initialContentRef.current,
+      features: {
+        [Crepe.Feature.TopBar]: true
+      }
     })
 
     crepe.on((listener) => {
