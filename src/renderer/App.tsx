@@ -73,8 +73,8 @@ function App(): JSX.Element {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-neutral-900 text-neutral-100">
-      <aside className="flex w-72 min-w-72 flex-col border-r border-neutral-700 bg-neutral-800">
+    <div className="flex h-screen w-screen bg-neutral-50 text-neutral-900">
+      <aside className="flex w-72 min-w-72 flex-col border-r border-neutral-200 bg-white">
         <WorkspacePanel />
         <div className="flex-1 overflow-auto">
           {activeRoot && (
@@ -92,11 +92,11 @@ function App(): JSX.Element {
           )}
         </div>
       </aside>
-      <main className="flex flex-1 flex-col overflow-hidden bg-neutral-900">
+      <main className="flex flex-1 flex-col overflow-hidden bg-white">
         {!activeRoot ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-neutral-500">
             <FolderOpen size={48} />
-            <p className="text-lg">No folder opened</p>
+            <p className="text-lg text-neutral-700">No folder opened</p>
             <p className="text-sm">Open a folder to browse files and edit Markdown</p>
             <button
               onClick={handleOpenFolder}
@@ -105,14 +105,14 @@ function App(): JSX.Element {
               <FolderOpen size={18} />
               Open Folder
             </button>
-            <p className="text-xs text-neutral-600">or press Ctrl+O</p>
+            <p className="text-xs text-neutral-500">or press Ctrl+O</p>
           </div>
         ) : (
           <EditorPane />
         )}
       </main>
       {currentDocument && (
-        <aside className="flex w-56 min-w-56 flex-col border-l border-neutral-700 bg-neutral-800">
+        <aside className="flex w-56 min-w-56 flex-col border-l border-neutral-200 bg-white">
           <TocPanel document={currentDocument} onHeadingClick={handleHeadingClick} />
         </aside>
       )}

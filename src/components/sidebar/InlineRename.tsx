@@ -31,7 +31,7 @@ export function InlineRename({ initialName, onConfirm, onCancel }: InlineRenameP
       onChange={(e) => setValue(e.target.value)}
       onKeyDown={handleKeyDown}
       onBlur={() => onConfirm(value.trim())}
-      className="w-full rounded border border-blue-500 bg-neutral-700 px-1 py-0.5 text-sm outline-none"
+      className="w-full rounded border border-blue-500 bg-white px-1 py-0.5 text-sm text-neutral-800 outline-none"
     />
   )
 }

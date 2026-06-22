@@ -35,13 +35,13 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
   }, [isExpanded, root, rootRef, getChildren, setExpanded])
 
   return (
-    <div className="py-1">
+    <div className="py-1 text-neutral-800">
       <button
         onClick={handleToggle}
-        className="flex w-full items-center gap-1 px-2 py-1 text-sm hover:bg-neutral-700"
+        className="flex w-full items-center gap-1 px-2 py-1 text-sm hover:bg-neutral-100"
       >
         {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <Folder size={14} className="text-blue-400" />
+        <Folder size={14} className="text-blue-500" />
         <span className="truncate">{rootRef.name}</span>
       </button>
 

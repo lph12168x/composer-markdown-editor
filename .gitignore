@@ -51,3 +51,7 @@ Thumbs.db
 *.pem
 *.p12
 *.key
+
+# User planning documents
+ticklish-knitting-dawn.md
+markdown-editor-plan.md
