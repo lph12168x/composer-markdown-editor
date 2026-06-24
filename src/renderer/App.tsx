@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useDocumentStore } from '../stores/fileStore'
 import { WorkspacePanel } from '../components/sidebar/WorkspacePanel'
 import { FileTree } from '../components/sidebar/FileTree'
+import { GitPanel } from '../components/git/GitPanel'
 import { EditorPane } from '../components/editor/EditorPane'
 import { TocPanel, type Heading } from '../components/editor/TocPanel'
 import type { FileRef } from '../types/file'
@@ -91,6 +92,7 @@ function App(): JSX.Element {
             />
           )}
         </div>
+        {activeRoot?.type === 'local' && activeRoot.path && <GitPanel root={activeRoot} />}
       </aside>
       <main className="flex flex-1 flex-col overflow-hidden bg-white">
         {!activeRoot ? (
