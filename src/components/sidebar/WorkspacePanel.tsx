@@ -1,9 +1,12 @@
-import { FolderOpen, X } from 'lucide-react'
+import { useState } from 'react'
+import { FolderOpen, Server, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
+import { SshConnectModal } from '../modals/SshConnectModal'
 
 export function WorkspacePanel(): JSX.Element {
   const { workspace, activeRootId, addLocalRoot, removeRoot, setActiveRoot } = useWorkspaceStore()
+  const [showSshModal, setShowSshModal] = useState(false)
 
   const handleOpenFolder = async (): Promise<void> => {
     const path = await fileSystemClient.openFolder()
@@ -18,13 +21,22 @@ export function WorkspacePanel(): JSX.Element {
         <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
           Workspace
         </span>
-        <button
-          onClick={handleOpenFolder}
-          className="rounded p-1 text-neutral-600 hover:bg-neutral-100"
-          title="Open folder"
-        >
-          <FolderOpen size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleOpenFolder}
+            className="rounded p-1 text-neutral-600 hover:bg-neutral-100"
+            title="Open folder"
+          >
+            <FolderOpen size={16} />
+          </button>
+          <button
+            onClick={() => setShowSshModal(true)}
+            className="rounded p-1 text-neutral-600 hover:bg-neutral-100"
+            title="Connect SSH"
+          >
+            <Server size={16} />
+          </button>
+        </div>
       </div>
 
       {workspace.roots.length === 0 ? (
@@ -42,7 +54,11 @@ export function WorkspacePanel(): JSX.Element {
                 onClick={() => setActiveRoot(root.id)}
                 className="flex flex-1 items-center gap-2 truncate text-left"
               >
-                <FolderOpen size={14} className="shrink-0 text-blue-500" />
+                {root.type === 'ssh' ? (
+                  <Server size={14} className="shrink-0 text-green-600" />
+                ) : (
+                  <FolderOpen size={14} className="shrink-0 text-blue-500" />
+                )}
                 <span className="truncate">{root.name}</span>
               </button>
               <button
@@ -56,6 +72,8 @@ export function WorkspacePanel(): JSX.Element {
           ))}
         </ul>
       )}
+
+      {showSshModal && <SshConnectModal onClose={() => setShowSshModal(false)} />}
     </div>
   )
 }

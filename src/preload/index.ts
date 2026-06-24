@@ -11,6 +11,10 @@ const allowedChannels = [
   'fs:delete',
   'fs:stat',
   'dialog:openFolder',
+  'dialog:openFile',
+  'ssh:connect',
+  'ssh:disconnect',
+  'ssh:status',
   'app:getVersion'
 ] as const
 

@@ -48,6 +48,10 @@ class FileSystemClient {
   async openFolder(): Promise<string | null> {
     return window.electronAPI.invoke<string | null>('dialog:openFolder')
   }
+
+  async openFile(): Promise<string | null> {
+    return window.electronAPI.invoke<string | null>('dialog:openFile')
+  }
 }
 
 export const fileSystemClient = new FileSystemClient()
