@@ -30,3 +30,9 @@ export interface RenamePayload {
   ref: FileRef
   newName: string
 }
+
+export const SSH_CHANNELS = {
+  CONNECT: 'ssh:connect',
+  DISCONNECT: 'ssh:disconnect',
+  STATUS: 'ssh:status'
+} as const

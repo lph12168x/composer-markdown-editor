@@ -58,7 +58,7 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
       const parentRef: FileRef = {
         id: parentId,
         rootId: root.id,
-        type: 'local',
+        type: root.type,
         path: parentPath,
         name: basename(parentPath),
         isDirectory: true

@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import type { Workspace, WorkspaceRoot } from '../types/file'
+import { useSshStore } from './sshStore'
 
 interface WorkspaceState {
   workspace: Workspace
   activeRootId: string | null
   addLocalRoot: (path: string, name?: string) => void
+  addSshRoot: (root: WorkspaceRoot) => void
   removeRoot: (rootId: string) => void
   setActiveRoot: (rootId: string | null) => void
   setWorkspaceName: (name: string) => void
@@ -44,17 +46,34 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     }))
   },
 
-  removeRoot: (rootId: string) => {
+  addSshRoot: (root: WorkspaceRoot) => {
     set((state) => ({
       workspace: {
         ...state.workspace,
-        roots: state.workspace.roots.filter((r) => r.id !== rootId)
+        roots: [...state.workspace.roots, root]
       },
-      activeRootId:
-        state.activeRootId === rootId
-          ? state.workspace.roots.find((r) => r.id !== rootId)?.id || null
-          : state.activeRootId
+      activeRootId: state.activeRootId || root.id
     }))
+  },
+
+  removeRoot: (rootId: string) => {
+    set((state) => {
+      const root = state.workspace.roots.find((r) => r.id === rootId)
+      if (root?.type === 'ssh') {
+        void useSshStore.getState().disconnect()
+      }
+
+      return {
+        workspace: {
+          ...state.workspace,
+          roots: state.workspace.roots.filter((r) => r.id !== rootId)
+        },
+        activeRootId:
+          state.activeRootId === rootId
+            ? state.workspace.roots.find((r) => r.id !== rootId)?.id || null
+            : state.activeRootId
+      }
+    })
   },
 
   setActiveRoot: (rootId: string | null) => {
