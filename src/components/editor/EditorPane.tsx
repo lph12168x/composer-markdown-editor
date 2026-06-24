@@ -1,16 +1,17 @@
 import { useEffect, useCallback } from 'react'
-import { Eye, FileCode, Pencil } from 'lucide-react'
+import { Eye, FileCode, Pencil, GitCompare } from 'lucide-react'
 import { useDocumentStore } from '../../stores/fileStore'
 import { useUiStore } from '../../stores/uiStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownPreview } from './MarkdownPreview'
 import { SourceEditor } from './SourceEditor'
+import { DiffViewer } from './DiffViewer'
 import { StatusBar } from './StatusBar'
 
 export function EditorPane(): JSX.Element {
   const { document, updateContent, updateRawContent, enterSourceMode, markSaved } = useDocumentStore()
-  const { editorMode, setEditorMode } = useUiStore()
+  const { editorMode, diffTarget, setEditorMode } = useUiStore()
 
   const handleSave = useCallback(async () => {
     if (!document || !document.modified) return
@@ -86,10 +87,26 @@ export function EditorPane(): JSX.Element {
             <Pencil size={12} />
             Edit
           </button>
+          {diffTarget && (
+            <button
+              onClick={() => setEditorMode('diff')}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                editorMode === 'diff'
+                  ? 'bg-white text-neutral-900 shadow-sm'
+                  : 'text-neutral-500 hover:text-neutral-800'
+              }`}
+              title="Diff view"
+            >
+              <GitCompare size={12} />
+              Diff
+            </button>
+          )}
         </div>
       </div>
       <div className="flex-1 overflow-hidden">
-        {document ? (
+        {editorMode === 'diff' ? (
+          <DiffViewer />
+        ) : document ? (
           editorMode === 'edit' ? (
             <MarkdownEditor key={document.ref.id} content={document.content} onChange={updateContent} />
           ) : editorMode === 'preview' ? (

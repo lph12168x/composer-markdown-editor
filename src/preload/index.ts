@@ -15,6 +15,15 @@ const allowedChannels = [
   'ssh:connect',
   'ssh:disconnect',
   'ssh:status',
+  'git:status',
+  'git:init',
+  'git:commit',
+  'git:stage',
+  'git:unstage',
+  'git:log',
+  'git:diff',
+  'git:branches',
+  'git:checkout',
   'app:getVersion'
 ] as const
 

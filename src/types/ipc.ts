@@ -36,3 +36,15 @@ export const SSH_CHANNELS = {
   DISCONNECT: 'ssh:disconnect',
   STATUS: 'ssh:status'
 } as const
+
+export const GIT_CHANNELS = {
+  STATUS: 'git:status',
+  INIT: 'git:init',
+  COMMIT: 'git:commit',
+  STAGE: 'git:stage',
+  UNSTAGE: 'git:unstage',
+  LOG: 'git:log',
+  DIFF: 'git:diff',
+  BRANCHES: 'git:branches',
+  CHECKOUT: 'git:checkout'
+} as const
