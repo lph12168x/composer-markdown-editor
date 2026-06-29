@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { createMainWindow } from './window'
 import { registerIpcHandlers } from './ipc'
+import { buildAppMenu } from './menu'
 
 // Disable GPU hardware acceleration to avoid issues in VMs / WSL / headless environments
 app.disableHardwareAcceleration()
@@ -24,6 +25,7 @@ app.on('web-contents-created', (_, contents) => {
 app.whenReady().then(() => {
   registerIpcHandlers()
   createMainWindow()
+  buildAppMenu()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

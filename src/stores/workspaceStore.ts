@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Workspace, WorkspaceRoot } from '../types/file'
 import { useSshStore } from './sshStore'
+import { settingsClient } from '../services/settingsClient'
 
 interface WorkspaceState {
   workspace: Workspace
@@ -10,6 +11,7 @@ interface WorkspaceState {
   removeRoot: (rootId: string) => void
   setActiveRoot: (rootId: string | null) => void
   setWorkspaceName: (name: string) => void
+  loadWorkspace: (workspace: Workspace, activeRootId?: string | null) => void
 }
 
 function generateId(): string {
@@ -21,7 +23,7 @@ function getRootName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
+export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspace: {
     id: generateId(),
     name: 'Untitled Workspace',
@@ -44,6 +46,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       },
       activeRootId: state.activeRootId || root.id
     }))
+
+    void settingsClient.addRecentDir(path)
+    void settingsClient.saveWorkspace(get().workspace.roots)
   },
 
   addSshRoot: (root: WorkspaceRoot) => {
@@ -54,6 +59,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
       },
       activeRootId: state.activeRootId || root.id
     }))
+
+    void settingsClient.saveWorkspace(get().workspace.roots)
   },
 
   removeRoot: (rootId: string) => {
@@ -74,6 +81,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
             : state.activeRootId
       }
     })
+
+    void settingsClient.saveWorkspace(get().workspace.roots)
   },
 
   setActiveRoot: (rootId: string | null) => {
@@ -84,5 +93,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, _get) => ({
     set((state) => ({
       workspace: { ...state.workspace, name }
     }))
+  },
+
+  loadWorkspace: (workspace: Workspace, activeRootId?: string | null) => {
+    set({
+      workspace,
+      activeRootId: activeRootId ?? workspace.activeRootId ?? workspace.roots[0]?.id ?? null
+    })
   }
 }))

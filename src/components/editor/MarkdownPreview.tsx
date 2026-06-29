@@ -215,7 +215,7 @@ export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX
     <div
       ref={containerRef}
       data-editor-scroll="true"
-      className="markdown-preview h-full w-full overflow-auto bg-neutral-50 p-6 text-neutral-900"
+      className="markdown-preview h-full w-full overflow-auto bg-neutral-50 p-6 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"
     />
   )
 }

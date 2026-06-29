@@ -1,12 +1,34 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, screen, ipcMain } from 'electron'
 import path from 'node:path'
+import fs from 'node:fs'
+import { APP_CHANNELS } from '../types/ipc'
+import type { FileRef } from '../types/file'
+import { getWindowState, setWindowState } from './settings/settings'
+
+let mainWindow: BrowserWindow | null = null
+let documentModified = false
+let allowClose = false
+let fileWatcher: fs.FSWatcher | null = null
+let watchedFileRef: FileRef | null = null
+let isWritingFile = false
+
+export function getMainWindow(): BrowserWindow | null {
+  return mainWindow
+}
 
 export function createMainWindow(): BrowserWindow {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize
+  const savedState = getWindowState()
 
-  const mainWindow = new BrowserWindow({
-    width: Math.min(1400, width * 0.8),
-    height: Math.min(900, height * 0.8),
+  const defaultWidth = Math.min(1400, screenWidth * 0.8)
+  const defaultHeight = Math.min(900, screenHeight * 0.8)
+
+  const width = savedState.width > 0 ? Math.min(savedState.width, screenWidth) : defaultWidth
+  const height = savedState.height > 0 ? Math.min(savedState.height, screenHeight) : defaultHeight
+
+  mainWindow = new BrowserWindow({
+    width,
+    height,
     minWidth: 800,
     minHeight: 600,
     show: false,
@@ -21,6 +43,10 @@ export function createMainWindow(): BrowserWindow {
       webSecurity: true
     }
   })
+
+  if (savedState.maximized) {
+    mainWindow.maximize()
+  }
 
   // CSP for dev and production
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
@@ -40,7 +66,49 @@ export function createMainWindow(): BrowserWindow {
   })
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow.show()
+    mainWindow?.show()
+  })
+
+  const saveWindowState = (): void => {
+    if (!mainWindow) return
+    const isMaximized = mainWindow.isMaximized()
+    const bounds = mainWindow.getNormalBounds()
+    setWindowState({
+      width: bounds.width,
+      height: bounds.height,
+      maximized: isMaximized
+    })
+  }
+
+  mainWindow.on('resize', saveWindowState)
+  mainWindow.on('move', saveWindowState)
+  mainWindow.on('maximize', saveWindowState)
+  mainWindow.on('unmaximize', saveWindowState)
+
+  mainWindow.on('close', (event) => {
+    if (allowClose) {
+      return
+    }
+    if (documentModified && mainWindow) {
+      event.preventDefault()
+      mainWindow.webContents.send(APP_CHANNELS.PROMPT_CLOSE)
+    }
+  })
+
+  mainWindow.on('closed', () => {
+    stopWatchingFile()
+    mainWindow = null
+  })
+
+  // Track whether the current document has unsaved changes.
+  ipcMain.on(APP_CHANNELS.MODIFIED, (_, modified: boolean) => {
+    documentModified = modified
+  })
+
+  // Allow the renderer to close the window after handling the prompt.
+  ipcMain.on(APP_CHANNELS.CLOSE_ALLOWED, () => {
+    allowClose = true
+    mainWindow?.close()
   })
 
   // Forward renderer console messages to main process terminal
@@ -57,4 +125,44 @@ export function createMainWindow(): BrowserWindow {
   }
 
   return mainWindow
+}
+
+export function setDocumentModified(modified: boolean): void {
+  documentModified = modified
+}
+
+export function watchFile(ref: FileRef): void {
+  stopWatchingFile()
+  if (ref.type !== 'local') return
+
+  watchedFileRef = ref
+  try {
+    fileWatcher = fs.watch(watchedFileRef.path, (_eventType) => {
+      if (isWritingFile) return
+      if (!mainWindow || mainWindow.isDestroyed()) return
+      if (!watchedFileRef) return
+      mainWindow.webContents.send(APP_CHANNELS.FILE_CHANGED, watchedFileRef)
+    })
+  } catch (err) {
+    console.error('Failed to watch file:', err)
+  }
+}
+
+export function stopWatchingFile(): void {
+  if (fileWatcher) {
+    fileWatcher.close()
+    fileWatcher = null
+  }
+  watchedFileRef = null
+}
+
+export function pauseFileWatcher(): void {
+  isWritingFile = true
+}
+
+export function resumeFileWatcher(): void {
+  // Delay resuming slightly to avoid catching the write event tail.
+  setTimeout(() => {
+    isWritingFile = false
+  }, 100)
 }

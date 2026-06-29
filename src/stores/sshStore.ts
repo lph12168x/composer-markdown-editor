@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SshConnectionConfig, SshConnectionStatus } from '../types/ssh'
 import { SSH_CHANNELS } from '../types/ipc'
+import { settingsClient } from '../services/settingsClient'
 
 interface SshState {
   isConnected: boolean
@@ -34,6 +35,15 @@ export const useSshStore = create<SshState>((set) => ({
         host: result.status.host || null,
         username: result.status.username || null
       })
+
+      void settingsClient.addRecentConnection({
+        host: config.host,
+        port: config.port,
+        username: config.username,
+        authType: config.auth === 'privateKey' ? 'key' : config.auth,
+        privateKeyPath: config.auth === 'privateKey' ? config.privateKeyPath : undefined
+      })
+
       return { ...result.status, homePath: result.homePath }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect'

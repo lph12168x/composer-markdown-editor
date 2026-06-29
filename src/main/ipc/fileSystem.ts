@@ -10,6 +10,7 @@ import {
   type RenamePayload,
   type WriteFilePayload
 } from '../../types/ipc'
+import { pauseFileWatcher, resumeFileWatcher, watchFile } from '../window'
 
 export function registerFileSystemIPC(): void {
   fileSystemService.register('local', new LocalFileSystemProvider())
@@ -20,11 +21,20 @@ export function registerFileSystemIPC(): void {
   })
 
   ipcMain.handle(FS_CHANNELS.READ_FILE, async (_, ref: FileRef) => {
-    return fileSystemService.readFile(ref)
+    const content = await fileSystemService.readFile(ref)
+    if (!ref.isDirectory) {
+      watchFile(ref)
+    }
+    return content
   })
 
   ipcMain.handle(FS_CHANNELS.WRITE_FILE, async (_, payload: WriteFilePayload) => {
-    return fileSystemService.writeFile(payload.ref, payload.content)
+    pauseFileWatcher()
+    try {
+      return await fileSystemService.writeFile(payload.ref, payload.content)
+    } finally {
+      resumeFileWatcher()
+    }
   })
 
   ipcMain.handle(FS_CHANNELS.CREATE_FILE, async (_, payload: CreatePayload) => {

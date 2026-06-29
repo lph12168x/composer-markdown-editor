@@ -70,10 +70,47 @@ export function SourceEditor({ content, onChange }: EditorProps): JSX.Element {
   }, [content])
 
   return (
-    <div
-      ref={containerRef}
-      data-editor-scroll="true"
-      className="source-editor h-full w-full overflow-auto"
-    />
+    <>
+      <style>{`
+        .source-editor .cm-editor {
+          background-color: #ffffff;
+          color: #171717;
+        }
+        .source-editor .cm-gutters {
+          background-color: #f5f5f5;
+          border-right: 1px solid #e5e5e5;
+        }
+        .source-editor .cm-activeLine {
+          background-color: #f5f5f5;
+        }
+        .source-editor .cm-activeLineGutter {
+          background-color: #e5e5e5;
+        }
+        .dark .source-editor .cm-editor {
+          background-color: #171717;
+          color: #f5f5f5;
+        }
+        .dark .source-editor .cm-gutters {
+          background-color: #262626;
+          border-right-color: #404040;
+          color: #a3a3a3;
+        }
+        .dark .source-editor .cm-activeLine,
+        .dark .source-editor .cm-activeLineGutter {
+          background-color: #262626;
+        }
+        .dark .source-editor .cm-cursor {
+          border-left-color: #f5f5f5;
+        }
+        .dark .source-editor .cm-selectionBackground {
+          background-color: #404040;
+        }
+      `}</style>
+      <div
+        ref={containerRef}
+        data-editor-scroll="true"
+        className="source-editor h-full w-full overflow-auto"
+      />
+    </>
   )
 }

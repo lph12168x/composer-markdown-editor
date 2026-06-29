@@ -163,3 +163,65 @@ body {
 .source-editor .cm-activeLine {
   background-color: #f5f5f5;
 }
+
+/* Dark mode overrides */
+.dark .markdown-preview h1,
+.dark .markdown-preview h2,
+.dark .markdown-preview h3,
+.dark .markdown-preview h4,
+.dark .markdown-preview h5,
+.dark .markdown-preview h6 {
+  color: #f4f4f5;
+}
+
+.dark .markdown-preview h1,
+.dark .markdown-preview h2 {
+  border-bottom-color: #404040;
+}
+
+.dark .markdown-preview a {
+  color: #60a5fa;
+}
+
+.dark .markdown-preview code {
+  background-color: #27272a;
+  color: #f4f4f5;
+}
+
+.dark .markdown-preview pre {
+  background-color: #27272a;
+}
+
+.dark .markdown-preview blockquote {
+  border-left-color: #52525b;
+  color: #a1a1aa;
+}
+
+.dark .markdown-preview hr {
+  border-top-color: #404040;
+}
+
+.dark .markdown-preview th,
+.dark .markdown-preview td {
+  border-color: #404040;
+}
+
+.dark .markdown-preview th {
+  background-color: #27272a;
+}
+
+.dark .source-editor .cm-editor {
+  background-color: #171717;
+  color: #f5f5f5;
+}
+
+.dark .source-editor .cm-gutters {
+  background-color: #262626;
+  border-right-color: #404040;
+  color: #a3a3a3;
+}
+
+.dark .source-editor .cm-activeLine,
+.dark .source-editor .cm-activeLineGutter {
+  background-color: #262626;
+}
