@@ -3,21 +3,25 @@ import type { SshAuthMethod, SshConnectionConfig } from '../../types/ssh'
 import { useSshStore } from '../../stores/sshStore'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
+import type { RecentSshConnection } from '../../types/ipc'
 
 interface SshConnectModalProps {
   onClose: () => void
+  initialValues?: Partial<RecentSshConnection>
 }
 
-export function SshConnectModal({ onClose }: SshConnectModalProps): JSX.Element {
+export function SshConnectModal({ onClose, initialValues }: SshConnectModalProps): JSX.Element {
   const { connect, isConnecting, error } = useSshStore()
   const { addSshRoot } = useWorkspaceStore()
 
-  const [host, setHost] = useState('')
-  const [port, setPort] = useState('22')
-  const [username, setUsername] = useState('')
-  const [auth, setAuth] = useState<SshAuthMethod>('password')
+  const [host, setHost] = useState(initialValues?.host ?? '')
+  const [port, setPort] = useState(initialValues?.port?.toString() ?? '22')
+  const [username, setUsername] = useState(initialValues?.username ?? '')
+  const [auth, setAuth] = useState<SshAuthMethod>(
+    initialValues?.authType === 'key' ? 'privateKey' : initialValues?.authType ?? 'password'
+  )
   const [password, setPassword] = useState('')
-  const [privateKeyPath, setPrivateKeyPath] = useState('')
+  const [privateKeyPath, setPrivateKeyPath] = useState(initialValues?.privateKeyPath ?? '')
   const [passphrase, setPassphrase] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
 

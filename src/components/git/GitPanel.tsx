@@ -90,21 +90,21 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
   }
 
   return (
-    <div className="border-t border-neutral-200 p-3">
+    <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="mb-2 flex w-full items-center justify-between"
       >
-        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Git</span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Git</span>
         {expanded ? (
-          <ChevronDown size={14} className="text-neutral-500" />
+          <ChevronDown size={14} className="text-neutral-500 dark:text-neutral-400" />
         ) : (
-          <ChevronRight size={14} className="text-neutral-500" />
+          <ChevronRight size={14} className="text-neutral-500 dark:text-neutral-400" />
         )}
       </button>
 
       {!expanded && (
-        <div className="text-xs text-neutral-400">
+        <div className="text-xs text-neutral-400 dark:text-neutral-500">
           {repos.length} {repos.length === 1 ? 'repo' : 'repos'}
         </div>
       )}
@@ -115,22 +115,22 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
             <button
               onClick={() => loadStatus(root)}
               disabled={loading}
-              className="rounded p-1 text-neutral-600 hover:bg-neutral-100 disabled:opacity-50"
+              className="rounded p-1 text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
               title="Refresh Git status"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
 
-          {error && <div className="mb-2 rounded bg-red-50 p-2 text-xs text-red-600">{error}</div>}
+          {error && <div className="mb-2 rounded bg-red-50 p-2 text-xs text-red-600 dark:bg-red-900/20 dark:text-red-400">{error}</div>}
 
           {repos.length === 0 && !error && (
             <div className="space-y-2">
-              <div className="text-xs text-neutral-400">No Git repositories found</div>
+              <div className="text-xs text-neutral-400 dark:text-neutral-500">No Git repositories found</div>
               <button
                 onClick={handleInit}
                 disabled={loading}
-                className="w-full rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                className="w-full rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-700"
               >
                 Initialize repository here
               </button>
@@ -141,17 +141,17 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
             {repos.map((repo) => {
               const stagedCount = repo.changes.filter((c) => c.status === 'staged').length
               return (
-                <div key={repo.path} className="rounded border border-neutral-200 p-2">
-                  <div className="mb-1 flex items-center gap-2 text-sm text-neutral-700">
+                <div key={repo.path} className="rounded border border-neutral-200 p-2 dark:border-neutral-700">
+                  <div className="mb-1 flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-200">
                     <BranchSelect
                       root={root}
                       repoPath={repo.path}
                       currentBranch={repo.branch}
                       onSwitch={() => loadStatus(root)}
                     />
-                    <span className="text-xs text-neutral-400">{formatRepoPath(repo.path)}</span>
+                    <span className="text-xs text-neutral-400 dark:text-neutral-500">{formatRepoPath(repo.path)}</span>
                     {(repo.ahead > 0 || repo.behind > 0) && (
-                      <span className="text-xs text-neutral-400">
+                      <span className="text-xs text-neutral-400 dark:text-neutral-500">
                         {repo.ahead > 0 ? `↑${repo.ahead}` : ''}
                         {repo.behind > 0 ? `↓${repo.behind}` : ''}
                       </span>
@@ -163,7 +163,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                           [repo.path]: !prev[repo.path]
                         }))
                       }
-                      className="ml-auto flex items-center gap-1 rounded p-0.5 text-xs text-neutral-500 hover:bg-neutral-100"
+                      className="ml-auto flex items-center gap-1 rounded p-0.5 text-xs text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
                       title="Toggle commit history"
                     >
                       {historyExpanded[repo.path] ? (
@@ -176,22 +176,22 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                   </div>
 
                   {historyExpanded[repo.path] && (
-                    <div className="mb-2 max-h-32 overflow-auto rounded bg-neutral-50 p-1.5">
+                    <div className="mb-2 max-h-32 overflow-auto rounded bg-neutral-50 p-1.5 dark:bg-neutral-800">
                       {repo.history.length === 0 ? (
-                        <div className="text-xs text-neutral-400">No recent commits</div>
+                        <div className="text-xs text-neutral-400 dark:text-neutral-500">No recent commits</div>
                       ) : (
                         <ul className="space-y-1.5">
                           {repo.history.map((entry: GitLogEntry) => (
                             <li key={entry.hash} className="text-xs">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-[10px] text-neutral-400">
+                                <span className="font-mono text-[10px] text-neutral-400 dark:text-neutral-500">
                                   {entry.hash.slice(0, 7)}
                                 </span>
-                                <span className="flex-1 truncate font-medium text-neutral-700" title={entry.message}>
+                                <span className="flex-1 truncate font-medium text-neutral-700 dark:text-neutral-300" title={entry.message}>
                                   {entry.message.split('\n')[0]}
                                 </span>
                               </div>
-                              <div className="ml-7 text-[10px] text-neutral-400">
+                              <div className="ml-7 text-[10px] text-neutral-400 dark:text-neutral-500">
                                 {entry.author_name} · {formatLogDate(entry.date)}
                               </div>
                             </li>
@@ -202,7 +202,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                   )}
 
                   {repo.changes.length === 0 ? (
-                    <div className="text-xs text-neutral-400">No changes</div>
+                    <div className="text-xs text-neutral-400 dark:text-neutral-500">No changes</div>
                   ) : (
                     <ul className="mb-2 max-h-32 space-y-1 overflow-auto">
                       {repo.changes.map((change) => {
@@ -219,10 +219,10 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                               disabled={loading || isRenamed}
                               onChange={() => handleToggleStage(repo.path, change.path, isStaged)}
                               title={isRenamed ? 'Renamed files cannot be toggled individually' : isStaged ? 'Unstage' : 'Stage'}
-                              className="h-3 w-3 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                              className="h-3 w-3 rounded border-neutral-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50 dark:border-neutral-600"
                             />
                             {getChangeIcon(change.status)}
-                            <span className="flex-1 truncate text-neutral-700" title={change.path}>
+                            <span className="flex-1 truncate text-neutral-700 dark:text-neutral-300" title={change.path}>
                               {change.path}
                             </span>
                             <button
@@ -233,11 +233,11 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                                   filePath: change.path
                                 })
                               }
-                              className="shrink-0 rounded px-1 text-[10px] text-blue-600 hover:bg-blue-50"
+                              className="shrink-0 rounded px-1 text-[10px] text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
                             >
                               Diff
                             </button>
-                            <span className="shrink-0 rounded bg-neutral-100 px-1 text-[10px] uppercase text-neutral-500">
+                            <span className="shrink-0 rounded bg-neutral-100 px-1 text-[10px] uppercase text-neutral-500 dark:bg-neutral-700 dark:text-neutral-400">
                               {getChangeLabel(change.status)}
                             </span>
                           </li>

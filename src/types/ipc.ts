@@ -48,3 +48,65 @@ export const GIT_CHANNELS = {
   BRANCHES: 'git:branches',
   CHECKOUT: 'git:checkout'
 } as const
+
+export const SETTINGS_CHANNELS = {
+  GET: 'settings:get',
+  SET: 'settings:set',
+  RECENT_DIR_ADD: 'settings:recentDir:add',
+  RECENT_DIRS_LIST: 'settings:recentDirs:list',
+  RECENT_DIRS_CLEAR: 'settings:recentDirs:clear',
+  RECENT_CONNECTION_ADD: 'settings:recentConnection:add',
+  RECENT_CONNECTIONS_LIST: 'settings:recentConnections:list',
+  RECENT_CONNECTION_REMOVE: 'settings:recentConnection:remove',
+  RECENT_FILE_ADD: 'settings:recentFile:add',
+  RECENT_FILES_LIST: 'settings:recentFiles:list',
+  RECENT_FILES_CLEAR: 'settings:recentFiles:clear',
+  RECENT_FILE_REMOVE: 'settings:recentFile:remove',
+  WORKSPACE_SAVE: 'settings:workspace:save',
+  WORKSPACE_LOAD: 'settings:workspace:load'
+} as const
+
+export interface RecentSshConnection {
+  host: string
+  port: number
+  username: string
+  authType: 'password' | 'key' | 'agent'
+  privateKeyPath?: string
+}
+
+export interface RecentFile {
+  id: string
+  rootId: string
+  type: 'local' | 'ssh'
+  path: string
+  name: string
+}
+
+export interface WindowState {
+  width: number
+  height: number
+  maximized?: boolean
+}
+
+export type ThemeSetting = 'light' | 'dark'
+
+export interface SettingsSchema {
+  recentLocalDirs: string[]
+  recentSshConnections: RecentSshConnection[]
+  recentFiles: RecentFile[]
+  windowState: WindowState
+  theme: ThemeSetting
+}
+
+export const APP_CHANNELS = {
+  MODIFIED: 'app:modified',
+  PROMPT_CLOSE: 'app:prompt-close',
+  CLOSE_ALLOWED: 'app:close-allowed',
+  FILE_CHANGED: 'fs:fileChanged'
+} as const
+
+export const MENU_CHANNELS = {
+  OPEN_FOLDER: 'menu:open-folder',
+  OPEN_RECENT_FOLDER: 'menu:open-recent-folder',
+  OPEN_RECENT_FILE: 'menu:open-recent-file'
+} as const

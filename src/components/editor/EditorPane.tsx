@@ -1,8 +1,9 @@
 import { useEffect, useCallback } from 'react'
-import { Eye, FileCode, Pencil, GitCompare } from 'lucide-react'
+import { Eye, FileCode, Pencil, GitCompare, X } from 'lucide-react'
 import { useDocumentStore } from '../../stores/fileStore'
 import { useUiStore } from '../../stores/uiStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
+import { APP_CHANNELS } from '../../types/ipc'
 import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownPreview } from './MarkdownPreview'
 import { SourceEditor } from './SourceEditor'
@@ -10,7 +11,17 @@ import { DiffViewer } from './DiffViewer'
 import { StatusBar } from './StatusBar'
 
 export function EditorPane(): JSX.Element {
-  const { document, updateContent, updateRawContent, enterSourceMode, markSaved } = useDocumentStore()
+  const {
+    document,
+    documents,
+    activeDocumentId,
+    updateContent,
+    updateRawContent,
+    enterSourceMode,
+    markSaved,
+    activateDocument,
+    closeDocument
+  } = useDocumentStore()
   const { editorMode, diffTarget, setEditorMode } = useUiStore()
 
   const handleSave = useCallback(async () => {
@@ -39,6 +50,17 @@ export function EditorPane(): JSX.Element {
   }, [handleSave])
 
   useEffect(() => {
+    const handleSaveRequest = (): void => {
+      void handleSave().then(() => {
+        void window.electronAPI.invoke<void>(APP_CHANNELS.CLOSE_ALLOWED)
+      })
+    }
+
+    window.addEventListener('document:save', handleSaveRequest)
+    return () => window.removeEventListener('document:save', handleSaveRequest)
+  }, [handleSave])
+
+  useEffect(() => {
     if (editorMode === 'source') {
       enterSourceMode()
     }
@@ -46,17 +68,47 @@ export function EditorPane(): JSX.Element {
 
   return (
     <div className="flex h-full flex-col" data-editor-pane="true">
-      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-3 py-1.5">
-        <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-          Editor
-        </span>
-        <div className="flex items-center gap-1 rounded bg-neutral-100 p-0.5">
+      <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900">
+        <div className="flex flex-1 items-center gap-1 overflow-x-auto pr-2">
+          {documents.map((doc) => {
+            const isActive = doc.ref.id === activeDocumentId
+            return (
+              <button
+                key={doc.ref.id}
+                onClick={() => activateDocument(doc.ref.id)}
+                className={`group flex max-w-[12rem] shrink-0 items-center gap-2 rounded px-2 py-1 text-xs ${
+                  isActive
+                    ? 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white'
+                    : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800'
+                }`}
+                title={doc.ref.path}
+              >
+                <span className="truncate">{doc.ref.name}</span>
+                {doc.modified && (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                )}
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void closeDocument(doc.ref.id)
+                  }}
+                  className="rounded p-0.5 opacity-0 hover:bg-neutral-200 group-hover:opacity-100 dark:hover:bg-neutral-700"
+                  role="button"
+                  title="Close tab"
+                >
+                  <X size={10} />
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex shrink-0 items-center gap-1 rounded bg-neutral-100 p-0.5 dark:bg-neutral-800">
           <button
             onClick={() => setEditorMode('source')}
             className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
               editorMode === 'source'
-                ? 'bg-white text-neutral-900 shadow-sm'
-                : 'text-neutral-500 hover:text-neutral-800'
+                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
             }`}
             title="Source mode"
           >
@@ -67,8 +119,8 @@ export function EditorPane(): JSX.Element {
             onClick={() => setEditorMode('preview')}
             className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
               editorMode === 'preview'
-                ? 'bg-white text-neutral-900 shadow-sm'
-                : 'text-neutral-500 hover:text-neutral-800'
+                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
             }`}
             title="Preview mode"
           >
@@ -79,8 +131,8 @@ export function EditorPane(): JSX.Element {
             onClick={() => setEditorMode('edit')}
             className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
               editorMode === 'edit'
-                ? 'bg-white text-neutral-900 shadow-sm'
-                : 'text-neutral-500 hover:text-neutral-800'
+                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
             }`}
             title="Edit mode"
           >
@@ -92,8 +144,8 @@ export function EditorPane(): JSX.Element {
               onClick={() => setEditorMode('diff')}
               className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
                 editorMode === 'diff'
-                  ? 'bg-white text-neutral-900 shadow-sm'
-                  : 'text-neutral-500 hover:text-neutral-800'
+                  ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                  : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
               }`}
               title="Diff view"
             >
@@ -103,7 +155,7 @@ export function EditorPane(): JSX.Element {
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden dark:bg-neutral-900 dark:text-white">
         {editorMode === 'diff' ? (
           <DiffViewer />
         ) : document ? (
@@ -115,7 +167,7 @@ export function EditorPane(): JSX.Element {
             <SourceEditor key={document.ref.id} content={document.rawContent} onChange={updateRawContent} />
           )
         ) : (
-          <div className="flex h-full items-center justify-center text-neutral-400">
+          <div className="flex h-full items-center justify-center text-neutral-400 dark:text-neutral-500">
             Open a folder and double-click a .md file to edit
           </div>
         )}

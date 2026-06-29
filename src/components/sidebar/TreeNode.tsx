@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { ChevronRight, ChevronDown, Folder, FileText } from 'lucide-react'
 import type { FileRef, WorkspaceRoot } from '../../types/file'
-import { useFileTreeStore } from '../../stores/fileStore'
+import { useDocumentStore, useFileTreeStore } from '../../stores/fileStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { ContextMenu } from './TreeContextMenu'
 import { InlineRename } from './InlineRename'
@@ -34,6 +34,7 @@ interface TreeNodeProps {
 
 export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
   const { treeCache, expandedNodes, getChildren, refreshNode, setExpanded } = useFileTreeStore()
+  const { document: currentDocument, closeDocument, updateRef } = useDocumentStore()
   const [isLoading, setIsLoading] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -100,8 +101,12 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
     if (!newName || newName === ref.name) return
 
     try {
-      await fileSystemClient.rename(ref, newName)
+      const newRef = await fileSystemClient.rename(ref, newName)
       await refreshParent()
+
+      if (currentDocument && currentDocument.ref.id === ref.id) {
+        updateRef(newRef)
+      }
     } catch (err) {
       alertError(err, 'Failed to rename item')
     }
@@ -133,6 +138,10 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
     try {
       await fileSystemClient.delete(ref)
       await refreshParent()
+
+      if (currentDocument && currentDocument.ref.id === ref.id) {
+        await closeDocument()
+      }
     } catch (err) {
       alertError(err, 'Failed to delete item')
     }
@@ -155,7 +164,7 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
       <button
         onClick={handleToggle}
         onDoubleClick={handleDoubleClick}
-        className="flex w-full items-center gap-1 px-2 py-1 text-sm text-neutral-800 hover:bg-neutral-100"
+        className="flex w-full items-center gap-1 px-2 py-1 text-sm text-neutral-800 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800"
         style={{ paddingLeft: `${8 + depth * 12}px` }}
       >
         {ref.isDirectory ? (
@@ -174,7 +183,9 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
           <FileText size={14} className="text-neutral-500" />
         )}
 
-        <span className={`truncate ${ref.isDirectory ? '' : 'text-neutral-700'}`}>{ref.name}</span>
+        <span className={`truncate ${ref.isDirectory ? '' : 'text-neutral-700 dark:text-neutral-300'}`}>
+          {ref.name}
+        </span>
 
         {isLoading && <span className="ml-1 text-xs text-neutral-400">...</span>}
       </button>
