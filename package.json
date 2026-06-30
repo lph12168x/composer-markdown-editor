@@ -4,10 +4,15 @@
   "description": "A Markdown editor with local/remote directory management",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev --noSandbox -- --ozone-platform=x11 --disable-gpu --disable-software-rasterizer --disable-accelerated-video-decode --disable-accelerated-video-encode --disable-features=VaapiVideoDecoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL",
+    "dev": "electron-vite dev",
+    "dev:linux": "electron-vite dev --noSandbox -- --ozone-platform=x11 --disable-gpu --disable-software-rasterizer --disable-accelerated-video-decode --disable-accelerated-video-encode --disable-features=VaapiVideoDecoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL",
     "build": "electron-vite build",
-    "preview": "electron-vite preview --noSandbox",
+    "preview": "electron-vite preview",
+    "preview:linux": "electron-vite preview --noSandbox",
     "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -16,7 +21,7 @@
     "markdown",
     "editor"
   ],
-  "author": "",
+  "author": "lph12168x",
   "license": "ISC",
   "devDependencies": {
     "@types/dompurify": "^3.2.0",

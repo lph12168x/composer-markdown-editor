@@ -7,6 +7,11 @@ node_modules/
 out/
 dist/
 build/
+!build/
+!build/icon.png
+!build/icon.ico
+!build/icon.icns
+!build/icon.svg
 *.tsbuildinfo
 
 # Logs
