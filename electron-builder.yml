@@ -1,0 +1,40 @@
+appId: com.lph12168x.composer-markdown-editor
+productName: Composer Markdown Editor
+copyright: Copyright © 2026 lph12168x
+directories:
+  output: dist
+  buildResources: build
+icon: build/icon.png
+files:
+  - out/**/*
+  - build/**/*
+  - package.json
+extraResources:
+  - from: build
+    to: build
+    filter:
+      - '**/*'
+npmRebuild: false
+nodeGypRebuild: false
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  # Sign and notarize on macOS when environment variables are present.
+  # identity: ${env.APPLE_IDENTITY}
+  # notarize:
+  #   teamId: ${env.APPLE_TEAM_ID}
+win:
+  target:
+    - nsis
+    - portable
+linux:
+  category: Office
+  target:
+    - AppImage
+  maintainer: lph12168x
+  vendor: lph12168x
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
