@@ -38,3 +38,6 @@ linux:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
+portable:
+  artifactName: ${productName}-${version}-portable.${ext}

@@ -4,6 +4,7 @@ import DOMPurify from 'dompurify'
 import mermaid from 'mermaid'
 import type { FileRef } from '../../types/file'
 import { fileSystemClient } from '../../services/fileSystemClient'
+import '../../styles/markdown-preview.css'
 
 interface MarkdownPreviewProps {
   content: string

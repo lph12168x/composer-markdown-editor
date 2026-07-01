@@ -25,6 +25,8 @@ function App(): JSX.Element {
   const activeRoot = workspace.roots.find((r) => r.id === activeRootId)
   const [showSettings, setShowSettings] = useState(false)
   const [recentDirs, setRecentDirs] = useState<string[]>([])
+  const [leftWidth, setLeftWidth] = useState(288)
+  const [rightWidth, setRightWidth] = useState(224)
 
   const handleOpenFolder = useCallback(async (): Promise<void> => {
     const path = await fileSystemClient.openFolder()
@@ -32,6 +34,48 @@ function App(): JSX.Element {
       addLocalRoot(path)
     }
   }, [addLocalRoot])
+
+  const startLeftResize = useCallback((e: React.MouseEvent): void => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = leftWidth
+    const minWidth = 180
+    const maxWidth = 480
+
+    const onMove = (ev: MouseEvent): void => {
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + ev.clientX - startX))
+      setLeftWidth(newWidth)
+    }
+
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [leftWidth])
+
+  const startRightResize = useCallback((e: React.MouseEvent): void => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = rightWidth
+    const minWidth = 180
+    const maxWidth = 480
+
+    const onMove = (ev: MouseEvent): void => {
+      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - (ev.clientX - startX)))
+      setRightWidth(newWidth)
+    }
+
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [rightWidth])
 
   // Load persisted theme, workspace, and window state on startup.
   useEffect(() => {
@@ -120,6 +164,8 @@ function App(): JSX.Element {
             window.alert(message)
             console.error('Failed to open recent file:', err)
           })
+      } else if (action === 'open-recent-ssh' && payload && typeof payload === 'object') {
+        window.dispatchEvent(new CustomEvent('ssh:menu-reconnect', { detail: payload }))
       }
     })
   }, [handleAddLocalRoot, handleOpenFolder, openDocument])
@@ -192,7 +238,10 @@ function App(): JSX.Element {
 
   return (
     <div className="flex h-screen w-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white">
-      <aside className="flex w-72 min-w-72 flex-col border-r border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
+      <aside
+        className="flex flex-col border-r border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+        style={{ width: leftWidth, minWidth: 180, maxWidth: 480 }}
+      >
         <WorkspacePanel />
         <div className="flex-1 overflow-auto">
           {activeRoot && (
@@ -211,6 +260,13 @@ function App(): JSX.Element {
         </div>
         {activeRoot?.type === 'local' && activeRoot.path && <GitPanel root={activeRoot} />}
       </aside>
+      <div
+        className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+        onMouseDown={startLeftResize}
+        title="Drag to resize"
+      >
+        <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+      </div>
       <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-900">
         {!activeRoot ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-neutral-500 dark:text-neutral-400">
@@ -250,9 +306,21 @@ function App(): JSX.Element {
         )}
       </main>
       {currentDocument && (
-        <aside className="flex w-56 min-w-56 flex-col border-l border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900">
-          <TocPanel document={currentDocument} onHeadingClick={handleHeadingClick} />
-        </aside>
+        <>
+          <div
+            className="group flex w-1 cursor-col-resize items-center justify-center border-l border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+            onMouseDown={startRightResize}
+            title="Drag to resize"
+          >
+            <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+          </div>
+          <aside
+            className="flex flex-col border-l border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+            style={{ width: rightWidth, minWidth: 180, maxWidth: 480 }}
+          >
+            <TocPanel document={currentDocument} onHeadingClick={handleHeadingClick} />
+          </aside>
+        </>
       )}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
     </div>

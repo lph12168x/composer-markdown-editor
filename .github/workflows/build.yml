@@ -73,3 +73,10 @@ jobs:
         with:
           name: dist-${{ matrix.target }}
           path: dist
+
+      - name: Upload Windows portable exe
+        if: matrix.target == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-win
+          path: dist/*-portable.exe

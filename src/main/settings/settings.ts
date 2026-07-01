@@ -66,6 +66,10 @@ export function removeRecentConnection(host: string, username: string): void {
   store.set('recentSshConnections', connections)
 }
 
+export function clearRecentConnections(): void {
+  store.set('recentSshConnections', [])
+}
+
 export function addRecentFile(file: RecentFile): void {
   const files = store.get('recentFiles').filter((f) => f.id !== file.id)
   files.unshift(file)

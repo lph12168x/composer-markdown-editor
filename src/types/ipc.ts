@@ -108,5 +108,6 @@ export const APP_CHANNELS = {
 export const MENU_CHANNELS = {
   OPEN_FOLDER: 'menu:open-folder',
   OPEN_RECENT_FOLDER: 'menu:open-recent-folder',
-  OPEN_RECENT_FILE: 'menu:open-recent-file'
+  OPEN_RECENT_FILE: 'menu:open-recent-file',
+  OPEN_RECENT_SSH: 'menu:open-recent-ssh'
 } as const

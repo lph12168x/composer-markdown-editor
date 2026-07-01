@@ -3,6 +3,8 @@ import { MENU_CHANNELS } from '../types/ipc'
 import {
   clearRecentFiles,
   clearRecentLocalDirs,
+  clearRecentConnections,
+  listRecentConnections,
   listRecentFiles,
   listRecentLocalDirs
 } from './settings/settings'
@@ -11,6 +13,31 @@ function sendToRenderer(channel: string, payload?: unknown): void {
   const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   if (!window || window.isDestroyed()) return
   window.webContents.send(channel, payload)
+}
+
+function buildRecentSshSubmenu(): Electron.MenuItemConstructorOptions[] {
+  const connections = listRecentConnections()
+  if (connections.length === 0) {
+    return [{ label: 'No recent SSH connections', enabled: false }]
+  }
+
+  return [
+    ...connections.map((connection) => ({
+      label: `${connection.username}@${connection.host}:${connection.port}`,
+      toolTip: `Auth: ${connection.authType}`,
+      click: () => {
+        sendToRenderer(MENU_CHANNELS.OPEN_RECENT_SSH, connection)
+      }
+    })),
+    { type: 'separator' as const },
+    {
+      label: 'Clear Recent SSH Connections',
+      click: () => {
+        clearRecentConnections()
+        buildAppMenu()
+      }
+    }
+  ]
 }
 
 function buildRecentFoldersSubmenu(): Electron.MenuItemConstructorOptions[] {
@@ -95,6 +122,10 @@ export function buildAppMenu(): void {
       {
         label: 'Recent Files',
         submenu: buildRecentFilesSubmenu()
+      },
+      {
+        label: 'Recent SSH Connections',
+        submenu: buildRecentSshSubmenu()
       },
       { type: 'separator' },
       {
