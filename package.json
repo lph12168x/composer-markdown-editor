@@ -4,7 +4,7 @@
   "description": "A Markdown editor with local/remote directory management",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.js",
     "dev:linux": "electron-vite dev --noSandbox -- --ozone-platform=x11 --disable-gpu --disable-software-rasterizer --disable-accelerated-video-decode --disable-accelerated-video-encode --disable-features=VaapiVideoDecoder,VaapiVideoEncoder,VaapiVideoDecodeLinuxGL",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

@@ -18,6 +18,6 @@ export default [
     }
   },
   {
-    ignores: ['out/**', 'node_modules/**', 'dist/**', '*.config.*']
+    ignores: ['out/**', 'node_modules/**', 'dist/**', '*.config.*', 'scripts/**']
   }
 ]

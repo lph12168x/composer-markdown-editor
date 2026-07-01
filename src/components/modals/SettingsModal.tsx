@@ -2,15 +2,20 @@ import { useEffect, useState } from 'react'
 import { X, Trash2, Server } from 'lucide-react'
 import { settingsClient } from '../../services/settingsClient'
 import type { RecentSshConnection } from '../../types/ipc'
+import type { SshConnectionConfig } from '../../types/ssh'
+import { useSshStore } from '../../stores/sshStore'
 import { SshConnectModal } from './SshConnectModal'
 
 interface SettingsModalProps {
   onClose: () => void
+  onOpenRemoteFolder?: (homePath: string) => void
 }
 
-export function SettingsModal({ onClose }: SettingsModalProps): JSX.Element {
+export function SettingsModal({ onClose, onOpenRemoteFolder }: SettingsModalProps): JSX.Element {
+  const { connect, isConnecting } = useSshStore()
   const [recentConnections, setRecentConnections] = useState<RecentSshConnection[]>([])
   const [reconnectConnection, setReconnectConnection] = useState<RecentSshConnection | null>(null)
+  const [directError, setDirectError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -41,8 +46,28 @@ export function SettingsModal({ onClose }: SettingsModalProps): JSX.Element {
     setRecentConnections([])
   }
 
-  const handleReconnect = (connection: RecentSshConnection): void => {
-    setReconnectConnection(connection)
+  const toConnectionConfig = (connection: RecentSshConnection): SshConnectionConfig => ({
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    auth: connection.authType === 'key' ? 'privateKey' : connection.authType,
+    privateKeyPath: connection.authType === 'key' ? connection.privateKeyPath : undefined
+  })
+
+  const handleReconnect = async (connection: RecentSshConnection): Promise<void> => {
+    setDirectError(null)
+
+    if (connection.authType === 'password') {
+      setReconnectConnection(connection)
+      return
+    }
+
+    try {
+      const status = await connect(toConnectionConfig(connection))
+      onOpenRemoteFolder?.(status.homePath)
+    } catch (err) {
+      setDirectError(err instanceof Error ? err.message : 'Failed to connect')
+    }
   }
 
   return (
@@ -86,8 +111,9 @@ export function SettingsModal({ onClose }: SettingsModalProps): JSX.Element {
                     className="flex items-center justify-between text-sm text-neutral-700 dark:text-neutral-300"
                   >
                     <button
-                      onClick={() => handleReconnect(conn)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => void handleReconnect(conn)}
+                      disabled={isConnecting}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
                       title="Reconnect"
                     >
                       <Server size={14} className="shrink-0 text-green-600" />
@@ -122,10 +148,20 @@ export function SettingsModal({ onClose }: SettingsModalProps): JSX.Element {
         </div>
       </div>
 
+      {directError && (
+        <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-600 dark:bg-red-900/30 dark:text-red-300">
+          {directError}
+        </div>
+      )}
+
       {reconnectConnection && (
         <SshConnectModal
           initialValues={reconnectConnection}
           onClose={() => setReconnectConnection(null)}
+          onConnected={(homePath) => {
+            setReconnectConnection(null)
+            onOpenRemoteFolder?.(homePath)
+          }}
         />
       )}
     </div>

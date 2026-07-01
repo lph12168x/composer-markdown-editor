@@ -1,18 +1,17 @@
 import { useState } from 'react'
 import type { SshAuthMethod, SshConnectionConfig } from '../../types/ssh'
 import { useSshStore } from '../../stores/sshStore'
-import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import type { RecentSshConnection } from '../../types/ipc'
 
 interface SshConnectModalProps {
   onClose: () => void
   initialValues?: Partial<RecentSshConnection>
+  onConnected?: (homePath: string) => void
 }
 
-export function SshConnectModal({ onClose, initialValues }: SshConnectModalProps): JSX.Element {
+export function SshConnectModal({ onClose, initialValues, onConnected }: SshConnectModalProps): JSX.Element {
   const { connect, isConnecting, error } = useSshStore()
-  const { addSshRoot } = useWorkspaceStore()
 
   const [host, setHost] = useState(initialValues?.host ?? '')
   const [port, setPort] = useState(initialValues?.port?.toString() ?? '22')
@@ -74,15 +73,7 @@ export function SshConnectModal({ onClose, initialValues }: SshConnectModalProps
 
     try {
       const status = await connect(config)
-      const rootId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-      addSshRoot({
-        id: rootId,
-        type: 'ssh',
-        name: `${config.username}@${config.host}`,
-        path: status.homePath,
-        connectionId: rootId
-      })
-      onClose()
+      onConnected?.(status.homePath)
     } catch {
       // error is already stored in sshStore
     }

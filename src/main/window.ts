@@ -65,9 +65,21 @@ export function createMainWindow(): BrowserWindow {
     })
   })
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show()
-  })
+  const showWindow = () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  }
+
+  mainWindow.once('ready-to-show', showWindow)
+
+  // Fallback: on some Linux/Wayland setups ready-to-show never fires, leaving the window hidden.
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      showWindow()
+    }
+  }, 1500)
 
   const saveWindowState = (): void => {
     if (!mainWindow) return

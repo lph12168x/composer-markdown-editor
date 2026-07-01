@@ -1,16 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FolderOpen, Server, Settings, Sun, Moon, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useSshStore } from '../../stores/sshStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { settingsClient } from '../../services/settingsClient'
-import type { ThemeSetting } from '../../types/ipc'
+import type { RecentSshConnection, ThemeSetting } from '../../types/ipc'
+import type { SshConnectionConfig } from '../../types/ssh'
 import { SshConnectModal } from '../modals/SshConnectModal'
+import { RemotePathPicker } from '../modals/RemotePathPicker'
 import { SettingsModal } from '../modals/SettingsModal'
 
 export function WorkspacePanel(): JSX.Element {
-  const { workspace, activeRootId, addLocalRoot, removeRoot, setActiveRoot } = useWorkspaceStore()
+  const { workspace, activeRootId, addLocalRoot, addSshRoot, removeRoot, setActiveRoot } = useWorkspaceStore()
+  const { connect } = useSshStore()
   const [showSshModal, setShowSshModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [remotePickerHomePath, setRemotePickerHomePath] = useState<string | null>(null)
+  const [menuReconnectConnection, setMenuReconnectConnection] = useState<RecentSshConnection | null>(null)
+  const [sshError, setSshError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
@@ -44,11 +51,55 @@ export function WorkspacePanel(): JSX.Element {
     await settingsClient.setTheme(next)
   }
 
+  const toConnectionConfig = (connection: RecentSshConnection): SshConnectionConfig => ({
+    host: connection.host,
+    port: connection.port,
+    username: connection.username,
+    auth: connection.authType === 'key' ? 'privateKey' : connection.authType,
+    privateKeyPath: connection.authType === 'key' ? connection.privateKeyPath : undefined
+  })
+
+  const handleDirectSshConnect = useCallback(async (connection: RecentSshConnection): Promise<void> => {
+    setSshError(null)
+    try {
+      const status = await connect(toConnectionConfig(connection))
+      setRemotePickerHomePath(status.homePath)
+    } catch (err) {
+      setSshError(err instanceof Error ? err.message : 'Failed to connect')
+    }
+  }, [connect])
+
   const handleOpenFolder = async (): Promise<void> => {
     const path = await fileSystemClient.openFolder()
     if (path) {
       addLocalRoot(path)
     }
+  }
+
+  useEffect(() => {
+    const handleMenuReconnect = (e: Event): void => {
+      const connection = (e as CustomEvent).detail as RecentSshConnection
+      if (!connection) return
+      if (connection.authType === 'password') {
+        setMenuReconnectConnection(connection)
+      } else {
+        void handleDirectSshConnect(connection)
+      }
+    }
+
+    window.addEventListener('ssh:menu-reconnect', handleMenuReconnect)
+    return () => window.removeEventListener('ssh:menu-reconnect', handleMenuReconnect)
+  }, [handleDirectSshConnect])
+
+  const handleSelectRemotePath = (selectedPath: string): void => {
+    setRemotePickerHomePath(null)
+    const name = selectedPath === '/' ? 'Remote Root' : selectedPath.split('/').pop() || selectedPath
+    addSshRoot({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      type: 'ssh',
+      name: `${name} (SSH)`,
+      path: selectedPath
+    })
   }
 
   return (
@@ -125,8 +176,46 @@ export function WorkspacePanel(): JSX.Element {
         </ul>
       )}
 
-      {showSshModal && <SshConnectModal onClose={() => setShowSshModal(false)} />}
-      {showSettingsModal && <SettingsModal onClose={() => setShowSettingsModal(false)} />}
+      {sshError && (
+        <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-600 dark:bg-red-900/30 dark:text-red-300">
+          {sshError}
+        </div>
+      )}
+      {showSshModal && (
+        <SshConnectModal
+          onClose={() => setShowSshModal(false)}
+          onConnected={(homePath) => {
+            setShowSshModal(false)
+            setRemotePickerHomePath(homePath)
+          }}
+        />
+      )}
+      {menuReconnectConnection && (
+        <SshConnectModal
+          initialValues={menuReconnectConnection}
+          onClose={() => setMenuReconnectConnection(null)}
+          onConnected={(homePath) => {
+            setMenuReconnectConnection(null)
+            setRemotePickerHomePath(homePath)
+          }}
+        />
+      )}
+      {remotePickerHomePath && (
+        <RemotePathPicker
+          defaultPath={remotePickerHomePath}
+          onSelect={handleSelectRemotePath}
+          onClose={() => setRemotePickerHomePath(null)}
+        />
+      )}
+      {showSettingsModal && (
+        <SettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          onOpenRemoteFolder={(homePath) => {
+            setShowSettingsModal(false)
+            setRemotePickerHomePath(homePath)
+          }}
+        />
+      )}
     </div>
   )
 }

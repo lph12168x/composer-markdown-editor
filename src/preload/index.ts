@@ -82,7 +82,9 @@ const electronAPI: ElectronAPI = {
       'menu:open-recent-folder': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
         callback('open-recent-folder', payload),
       'menu:open-recent-file': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
-        callback('open-recent-file', payload)
+        callback('open-recent-file', payload),
+      'menu:open-recent-ssh': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
+        callback('open-recent-ssh', payload)
     }
     Object.entries(handlers).forEach(([channel, handler]) => {
       ipcRenderer.on(channel, handler)
