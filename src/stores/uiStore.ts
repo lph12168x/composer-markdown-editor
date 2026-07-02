@@ -1,9 +1,10 @@
 import { create } from 'zustand'
+import type { WorkspaceRoot } from '../types/file'
 
 export type EditorMode = 'edit' | 'preview' | 'source' | 'diff'
 
 export interface DiffTarget {
-  rootPath: string
+  root: WorkspaceRoot
   repoPath: string
   filePath: string
 }

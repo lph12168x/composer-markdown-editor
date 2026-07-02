@@ -114,6 +114,13 @@ export function buildAppMenu(): void {
           sendToRenderer(MENU_CHANNELS.OPEN_FOLDER)
         }
       },
+      {
+        label: 'Open File',
+        accelerator: 'CmdOrCtrl+Shift+O',
+        click: () => {
+          sendToRenderer(MENU_CHANNELS.OPEN_FILE)
+        }
+      },
       { type: 'separator' },
       {
         label: 'Recent Folders',

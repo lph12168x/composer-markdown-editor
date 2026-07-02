@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, ipcMain } from 'electron'
+import { BrowserWindow, screen, ipcMain, Menu } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { APP_CHANNELS } from '../types/ipc'
@@ -127,6 +127,18 @@ export function createMainWindow(): BrowserWindow {
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     const prefix = `[renderer:${level}]`
     console.log(prefix, message, `(${sourceId}:${line})`)
+  })
+
+  // Basic right-click context menu for text editing.
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menu = Menu.buildFromTemplate([
+      { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
+      { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
+      { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
+      { type: 'separator' },
+      { label: 'Select All', role: 'selectAll', enabled: params.editFlags.canSelectAll }
+    ])
+    menu.popup()
   })
 
   // HMR for renderer based on electron-vite

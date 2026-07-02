@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import markdownIt from 'markdown-it'
+import markdownItContainer from 'markdown-it-container'
 import DOMPurify from 'dompurify'
 import mermaid from 'mermaid'
 import type { FileRef } from '../../types/file'
@@ -16,6 +17,22 @@ const md = markdownIt({
   linkify: true,
   typographer: true
 })
+
+const ADMONITION_TYPES = ['tip', 'warning', 'danger', 'info', 'details']
+
+for (const name of ADMONITION_TYPES) {
+  md.use(markdownItContainer, name, {
+    render(tokens, idx) {
+      const token = tokens[idx]
+      const title = token.info.trim().slice(name.length).trim() || name.toUpperCase()
+
+      if (token.nesting === 1) {
+        return `<div class="admonition admonition-${name}"><p class="admonition-title">${md.utils.escapeHtml(title)}</p>\n`
+      }
+      return '</div>\n'
+    }
+  })
+}
 
 mermaid.initialize({
   startOnLoad: false,

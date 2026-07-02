@@ -228,7 +228,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                             <button
                               onClick={() =>
                                 openDiff({
-                                  rootPath: root.path || '',
+                                  root,
                                   repoPath: repo.path,
                                   filePath: change.path
                                 })

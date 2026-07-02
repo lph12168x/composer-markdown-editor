@@ -13,8 +13,22 @@ import { settingsClient } from '../services/settingsClient'
 import { APP_CHANNELS } from '../types/ipc'
 import { SettingsModal } from '../components/modals/SettingsModal'
 
+function getDirName(filePath: string): string {
+  const idx = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  return idx > 0 ? filePath.slice(0, idx) : filePath
+}
+
+function getBaseName(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath
+}
+
+function isUnderRoot(filePath: string, rootPath: string): boolean {
+  const sep = rootPath.endsWith('/') || rootPath.endsWith('\\') ? '' : filePath.includes('\\') ? '\\' : '/'
+  return filePath.startsWith(rootPath + sep)
+}
+
 function App(): JSX.Element {
-  const { workspace, activeRootId, addLocalRoot, loadWorkspace } = useWorkspaceStore()
+  const { workspace, activeRootId, addLocalRoot, loadWorkspace, setActiveRoot } = useWorkspaceStore()
   const { document: currentDocument, documents, openDocument } = useDocumentStore()
   const handleAddLocalRoot = useCallback(
     (path: string) => {
@@ -34,6 +48,38 @@ function App(): JSX.Element {
       addLocalRoot(path)
     }
   }, [addLocalRoot])
+
+  const openLocalFileByPath = useCallback(async (filePath: string): Promise<void> => {
+    const roots = useWorkspaceStore.getState().workspace.roots
+    const existingRoot = roots.find(
+      (r) => r.type === 'local' && r.path && isUnderRoot(filePath, r.path)
+    )
+
+    let root = existingRoot
+    if (!root) {
+      const dir = getDirName(filePath)
+      addLocalRoot(dir)
+      root = useWorkspaceStore.getState().workspace.roots.find(
+        (r) => r.type === 'local' && r.path === dir
+      )
+    }
+
+    if (root) {
+      setActiveRoot(root.id)
+    }
+
+    const ref: FileRef = {
+      id: `local:${filePath}`,
+      rootId: root?.id || 'drop',
+      type: 'local',
+      path: filePath,
+      name: getBaseName(filePath),
+      isDirectory: false
+    }
+
+    const content = await fileSystemClient.readFile(ref)
+    openDocument(ref, content)
+  }, [addLocalRoot, openDocument, setActiveRoot])
 
   const startLeftResize = useCallback((e: React.MouseEvent): void => {
     e.preventDefault()
@@ -147,11 +193,57 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleOpenFolder])
 
+  // Drag-and-drop files from the OS file manager to open them.
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent): void => {
+      e.preventDefault()
+    }
+
+    const handleDrop = async (e: DragEvent): Promise<void> => {
+      e.preventDefault()
+      const files = e.dataTransfer?.files
+      if (!files || files.length === 0) return
+
+      for (const file of files) {
+        const filePath = (file as unknown as { path?: string }).path
+        if (!filePath) continue
+
+        try {
+          await openLocalFileByPath(filePath)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to open dropped file'
+          window.alert(message)
+          console.error('Failed to open dropped file:', err)
+        }
+      }
+    }
+
+    window.addEventListener('dragover', handleDragOver)
+    window.addEventListener('drop', handleDrop)
+    return () => {
+      window.removeEventListener('dragover', handleDragOver)
+      window.removeEventListener('drop', handleDrop)
+    }
+  }, [openLocalFileByPath])
+
   // Native File menu actions.
   useEffect(() => {
     return window.electronAPI.onMenuAction((action, payload) => {
       if (action === 'open-folder') {
         void handleOpenFolder()
+      } else if (action === 'open-file') {
+        void (async () => {
+          const filePath = await fileSystemClient.openFile()
+          if (filePath) {
+            try {
+              await openLocalFileByPath(filePath)
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Failed to open file'
+              window.alert(message)
+              console.error('Failed to open file:', err)
+            }
+          }
+        })()
       } else if (action === 'open-recent-folder' && typeof payload === 'string') {
         handleAddLocalRoot(payload)
       } else if (action === 'open-recent-file' && payload && typeof payload === 'object') {
@@ -168,7 +260,7 @@ function App(): JSX.Element {
         window.dispatchEvent(new CustomEvent('ssh:menu-reconnect', { detail: payload }))
       }
     })
-  }, [handleAddLocalRoot, handleOpenFolder, openDocument])
+  }, [handleAddLocalRoot, handleOpenFolder, openDocument, openLocalFileByPath])
 
   // Close-before-save prompt.
   useEffect(() => {
@@ -258,7 +350,7 @@ function App(): JSX.Element {
             />
           )}
         </div>
-        {activeRoot?.type === 'local' && activeRoot.path && <GitPanel root={activeRoot} />}
+        {activeRoot?.path && <GitPanel root={activeRoot} />}
       </aside>
       <div
         className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
