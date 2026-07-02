@@ -43,7 +43,7 @@ export function DiffViewer(): JSX.Element {
         setLoading(true)
         setError(null)
         const text = await gitClient.diff(
-          diffTarget.rootPath,
+          diffTarget.root,
           diffTarget.repoPath,
           diffTarget.filePath
         )

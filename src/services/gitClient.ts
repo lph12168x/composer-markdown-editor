@@ -1,41 +1,42 @@
 import { GIT_CHANNELS } from '../types/ipc'
+import type { WorkspaceRoot } from '../types/file'
 import type { GitRepoStatus } from '../types/git'
 
 class GitClient {
-  async status(rootPath: string): Promise<GitRepoStatus[]> {
-    return window.electronAPI.invoke<GitRepoStatus[]>(GIT_CHANNELS.STATUS, rootPath)
+  async status(root: WorkspaceRoot): Promise<GitRepoStatus[]> {
+    return window.electronAPI.invoke<GitRepoStatus[]>(GIT_CHANNELS.STATUS, root)
   }
 
-  async init(rootPath: string): Promise<void> {
-    return window.electronAPI.invoke<void>(GIT_CHANNELS.INIT, rootPath)
+  async init(root: WorkspaceRoot): Promise<void> {
+    return window.electronAPI.invoke<void>(GIT_CHANNELS.INIT, root)
   }
 
-  async commit(rootPath: string, repoPath: string, message: string): Promise<void> {
-    return window.electronAPI.invoke<void>(GIT_CHANNELS.COMMIT, { rootPath, repoPath, message })
+  async commit(root: WorkspaceRoot, repoPath: string, message: string): Promise<void> {
+    return window.electronAPI.invoke<void>(GIT_CHANNELS.COMMIT, { root, repoPath, message })
   }
 
-  async stage(rootPath: string, repoPath: string, filePath: string): Promise<void> {
-    return window.electronAPI.invoke<void>(GIT_CHANNELS.STAGE, { rootPath, repoPath, filePath })
+  async stage(root: WorkspaceRoot, repoPath: string, filePath: string): Promise<void> {
+    return window.electronAPI.invoke<void>(GIT_CHANNELS.STAGE, { root, repoPath, filePath })
   }
 
-  async unstage(rootPath: string, repoPath: string, filePath: string): Promise<void> {
-    return window.electronAPI.invoke<void>(GIT_CHANNELS.UNSTAGE, { rootPath, repoPath, filePath })
+  async unstage(root: WorkspaceRoot, repoPath: string, filePath: string): Promise<void> {
+    return window.electronAPI.invoke<void>(GIT_CHANNELS.UNSTAGE, { root, repoPath, filePath })
   }
 
-  async log(rootPath: string) {
-    return window.electronAPI.invoke<GitRepoStatus['history']>(GIT_CHANNELS.LOG, rootPath)
+  async log(root: WorkspaceRoot) {
+    return window.electronAPI.invoke<GitRepoStatus['history']>(GIT_CHANNELS.LOG, root)
   }
 
-  async diff(rootPath: string, repoPath: string, filePath: string): Promise<string> {
-    return window.electronAPI.invoke<string>(GIT_CHANNELS.DIFF, { rootPath, repoPath, filePath })
+  async diff(root: WorkspaceRoot, repoPath: string, filePath: string): Promise<string> {
+    return window.electronAPI.invoke<string>(GIT_CHANNELS.DIFF, { root, repoPath, filePath })
   }
 
-  async branches(rootPath: string, repoPath: string): Promise<string[]> {
-    return window.electronAPI.invoke<string[]>(GIT_CHANNELS.BRANCHES, { rootPath, repoPath })
+  async branches(root: WorkspaceRoot, repoPath: string): Promise<string[]> {
+    return window.electronAPI.invoke<string[]>(GIT_CHANNELS.BRANCHES, { root, repoPath })
   }
 
-  async checkout(rootPath: string, repoPath: string, branchName: string): Promise<void> {
-    return window.electronAPI.invoke<void>(GIT_CHANNELS.CHECKOUT, { rootPath, repoPath, branchName })
+  async checkout(root: WorkspaceRoot, repoPath: string, branchName: string): Promise<void> {
+    return window.electronAPI.invoke<void>(GIT_CHANNELS.CHECKOUT, { root, repoPath, branchName })
   }
 }
 

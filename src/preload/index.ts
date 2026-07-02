@@ -79,6 +79,7 @@ const electronAPI: ElectronAPI = {
   onMenuAction: (callback) => {
     const handlers = {
       'menu:open-folder': (): void => callback('open-folder'),
+      'menu:open-file': (): void => callback('open-file'),
       'menu:open-recent-folder': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
         callback('open-recent-folder', payload),
       'menu:open-recent-file': (_event: Electron.IpcRendererEvent, payload: unknown): void =>

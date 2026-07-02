@@ -21,14 +21,14 @@ export function BranchSelect({ root, repoPath, currentBranch, onSwitch }: Branch
       return
     }
 
-    if (root.type !== 'local' || !root.path) {
-      window.alert('Only local repositories are supported')
+    if (!root.path) {
+      window.alert('Workspace root has no path')
       return
     }
 
     try {
       setLoading(true)
-      const list = await gitClient.branches(root.path, repoPath)
+      const list = await gitClient.branches(root, repoPath)
       setBranches(list)
       setOpen(true)
     } catch (err) {
@@ -44,14 +44,14 @@ export function BranchSelect({ root, repoPath, currentBranch, onSwitch }: Branch
       return
     }
 
-    if (root.type !== 'local' || !root.path) {
-      window.alert('Only local repositories are supported')
+    if (!root.path) {
+      window.alert('Workspace root has no path')
       return
     }
 
     try {
       setLoading(true)
-      await gitClient.checkout(root.path, repoPath, branchName)
+      await gitClient.checkout(root, repoPath, branchName)
       setOpen(false)
       onSwitch()
     } catch (err) {

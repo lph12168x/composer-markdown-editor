@@ -89,6 +89,39 @@ class SshConnectionManager {
     return this.connection.sftp
   }
 
+  async execCommand(command: string): Promise<{ stdout: string; stderr: string; code: number }> {
+    if (this.connecting) {
+      await this.connecting
+    }
+
+    if (!this.connection) {
+      throw new Error('SSH connection is not established')
+    }
+
+    return new Promise((resolve, reject) => {
+      this.connection!.client.exec(command, (err, stream) => {
+        if (err) {
+          reject(err)
+          return
+        }
+
+        let stdout = ''
+        let stderr = ''
+
+        stream
+          .on('close', (code: number) => {
+            resolve({ stdout, stderr, code })
+          })
+          .on('data', (data: Buffer) => {
+            stdout += data.toString('utf-8')
+          })
+          .stderr.on('data', (data: Buffer) => {
+            stderr += data.toString('utf-8')
+          })
+      })
+    })
+  }
+
   getStatus(): SshConnectionStatus {
     if (this.connection) {
       return {
