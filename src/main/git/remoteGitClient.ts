@@ -1,8 +1,17 @@
+import path from 'node:path'
 import type { GitChange, GitLogEntry, GitRepoStatus } from '../../types/git'
 import { sshConnectionManager } from '../ssh/sshClient'
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function isWindowsPath(p: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(p)
+}
+
+function remoteJoin(...segments: string[]): string {
+  return isWindowsPath(segments[0]) ? path.win32.join(...segments) : path.posix.join(...segments)
 }
 
 function joinCommands(...commands: string[]): string {
@@ -56,7 +65,7 @@ function parsePorcelainStatus(stdout: string): {
   behind: number
   changes: GitChange[]
 } {
-  const lines = stdout.split('\n').filter(Boolean)
+  const lines = stdout.split('\n').map((line) => line.replace(/\r$/, '')).filter(Boolean)
   let branch: string | null = null
   let ahead = 0
   let behind = 0
@@ -136,7 +145,7 @@ export async function getGitStatus(repoPath: string): Promise<Omit<GitRepoStatus
   }
 
   const [statusOut, logOut] = await Promise.all([
-    execGit(repoPath, 'status', '--porcelain=v1', '-b'),
+    execGit(repoPath, 'status', '--porcelain=v1', '-b', '-uall'),
     execGit(repoPath, 'log', '-n', '5', `--format=%H%x1f%ai%x1f%an%x1f%s`)
   ])
 
@@ -170,7 +179,7 @@ export async function getRepoStatuses(rootPath: string): Promise<GitRepoStatus[]
   const statuses: GitRepoStatus[] = []
 
   for (const repoRelPath of repoPaths) {
-    const repoAbsPath = repoRelPath === '.' ? rootPath : `${rootPath}/${repoRelPath}`
+    const repoAbsPath = repoRelPath === '.' ? rootPath : remoteJoin(rootPath, repoRelPath)
     const status = await getGitStatus(repoAbsPath)
     statuses.push({ ...status, path: repoRelPath })
   }
@@ -225,7 +234,7 @@ export async function getGitDiff(repoPath: string, filePath: string): Promise<st
   }
 
   // For untracked new files, show the full content as an added diff.
-  const fullPath = `${repoPath}/${targetPath}`
+  const fullPath = remoteJoin(repoPath, targetPath)
   const sftp = await sshConnectionManager.getSftp()
   return new Promise((resolve, reject) => {
     sftp.readFile(fullPath, 'utf-8', (err, data) => {

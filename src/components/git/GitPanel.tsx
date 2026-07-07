@@ -90,7 +90,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
   }
 
   return (
-    <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
+    <div className="flex h-full flex-col border-t border-neutral-200 p-3 dark:border-neutral-700">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="mb-2 flex w-full items-center justify-between"
@@ -110,7 +110,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
       )}
 
       {expanded && (
-        <>
+        <div className="flex flex-1 flex-col overflow-hidden min-h-0">
           <div className="mb-2 flex items-center justify-end gap-1">
             <button
               onClick={() => loadStatus(root)}
@@ -137,7 +137,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto">
             {repos.map((repo) => {
               const stagedCount = repo.changes.filter((c) => c.status === 'staged').length
               return (
@@ -176,7 +176,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                   </div>
 
                   {historyExpanded[repo.path] && (
-                    <div className="mb-2 max-h-32 overflow-auto rounded bg-neutral-50 p-1.5 dark:bg-neutral-800">
+                    <div className="mb-2 overflow-auto rounded bg-neutral-50 p-1.5 dark:bg-neutral-800">
                       {repo.history.length === 0 ? (
                         <div className="text-xs text-neutral-400 dark:text-neutral-500">No recent commits</div>
                       ) : (
@@ -204,7 +204,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
                   {repo.changes.length === 0 ? (
                     <div className="text-xs text-neutral-400 dark:text-neutral-500">No changes</div>
                   ) : (
-                    <ul className="mb-2 max-h-32 space-y-1 overflow-auto">
+                    <ul className="mb-2 space-y-1 overflow-auto">
                       {repo.changes.map((change) => {
                         const isStaged = change.status === 'staged'
                         const isRenamed = change.status === 'renamed'
@@ -257,7 +257,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
               )
             })}
           </div>
-        </>
+        </div>
       )}
 
       {commitTarget && (

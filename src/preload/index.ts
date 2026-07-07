@@ -85,7 +85,9 @@ const electronAPI: ElectronAPI = {
       'menu:open-recent-file': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
         callback('open-recent-file', payload),
       'menu:open-recent-ssh': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
-        callback('open-recent-ssh', payload)
+        callback('open-recent-ssh', payload),
+      'menu:toggle-left-panel': (): void => callback('toggle-left-panel'),
+      'menu:toggle-right-panel': (): void => callback('toggle-right-panel')
     }
     Object.entries(handlers).forEach(([channel, handler]) => {
       ipcRenderer.on(channel, handler)

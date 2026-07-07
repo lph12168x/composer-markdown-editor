@@ -41,6 +41,9 @@ function App(): JSX.Element {
   const [recentDirs, setRecentDirs] = useState<string[]>([])
   const [leftWidth, setLeftWidth] = useState(288)
   const [rightWidth, setRightWidth] = useState(224)
+  const [gitPanelHeight, setGitPanelHeight] = useState(240)
+  const [leftVisible, setLeftVisible] = useState(true)
+  const [rightVisible, setRightVisible] = useState(true)
 
   const handleOpenFolder = useCallback(async (): Promise<void> => {
     const path = await fileSystemClient.openFolder()
@@ -122,6 +125,27 @@ function App(): JSX.Element {
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }, [rightWidth])
+
+  const startGitResize = useCallback((e: React.MouseEvent): void => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startHeight = gitPanelHeight
+    const minHeight = 120
+    const maxHeight = 480
+
+    const onMove = (ev: MouseEvent): void => {
+      const newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - (ev.clientY - startY)))
+      setGitPanelHeight(newHeight)
+    }
+
+    const onUp = (): void => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [gitPanelHeight])
 
   // Load persisted theme, workspace, and window state on startup.
   useEffect(() => {
@@ -258,6 +282,10 @@ function App(): JSX.Element {
           })
       } else if (action === 'open-recent-ssh' && payload && typeof payload === 'object') {
         window.dispatchEvent(new CustomEvent('ssh:menu-reconnect', { detail: payload }))
+      } else if (action === 'toggle-left-panel') {
+        setLeftVisible((v) => !v)
+      } else if (action === 'toggle-right-panel') {
+        setRightVisible((v) => !v)
       }
     })
   }, [handleAddLocalRoot, handleOpenFolder, openDocument, openLocalFileByPath])
@@ -330,35 +358,55 @@ function App(): JSX.Element {
 
   return (
     <div className="flex h-screen w-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white">
-      <aside
-        className="flex flex-col border-r border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
-        style={{ width: leftWidth, minWidth: 180, maxWidth: 480 }}
-      >
-        <WorkspacePanel />
-        <div className="flex-1 overflow-auto">
-          {activeRoot && (
-            <FileTree
-              root={activeRoot}
-              rootRef={{
-                id: activeRoot.id,
-                rootId: activeRoot.id,
-                type: activeRoot.type,
-                path: activeRoot.path || '',
-                name: activeRoot.name,
-                isDirectory: true
-              }}
-            />
-          )}
-        </div>
-        {activeRoot?.path && <GitPanel root={activeRoot} />}
-      </aside>
-      <div
-        className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
-        onMouseDown={startLeftResize}
-        title="Drag to resize"
-      >
-        <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
-      </div>
+      {leftVisible && (
+        <>
+          <aside
+            className="flex flex-col border-r border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
+            style={{ width: leftWidth, minWidth: 180, maxWidth: 480 }}
+          >
+            <WorkspacePanel />
+            <div className="flex-1 overflow-auto">
+              {activeRoot && (
+                <FileTree
+                  root={activeRoot}
+                  rootRef={{
+                    id: activeRoot.id,
+                    rootId: activeRoot.id,
+                    type: activeRoot.type,
+                    path: activeRoot.path || '',
+                    name: activeRoot.name,
+                    isDirectory: true
+                  }}
+                />
+              )}
+            </div>
+            {activeRoot?.path && (
+              <>
+                <div
+                  className="group flex h-1 cursor-row-resize items-center justify-center bg-neutral-100 hover:bg-blue-200 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+                  onMouseDown={startGitResize}
+                  title="Drag to resize"
+                >
+                  <div className="h-0.5 w-8 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+                </div>
+                <div
+                  className="overflow-hidden"
+                  style={{ height: gitPanelHeight, minHeight: 120, maxHeight: 480 }}
+                >
+                  <GitPanel root={activeRoot} />
+                </div>
+              </>
+            )}
+          </aside>
+          <div
+            className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+            onMouseDown={startLeftResize}
+            title="Drag to resize"
+          >
+            <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+          </div>
+        </>
+      )}
       <main className="flex flex-1 flex-col overflow-hidden bg-white dark:bg-neutral-900">
         {!activeRoot ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-neutral-500 dark:text-neutral-400">
@@ -397,7 +445,7 @@ function App(): JSX.Element {
           <EditorPane />
         )}
       </main>
-      {currentDocument && (
+      {currentDocument && rightVisible && (
         <>
           <div
             className="group flex w-1 cursor-col-resize items-center justify-center border-l border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"

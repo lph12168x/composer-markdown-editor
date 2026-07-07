@@ -161,6 +161,21 @@ export function buildAppMenu(): void {
   template.push({
     label: 'View',
     submenu: [
+      {
+        label: 'Toggle Workspace Column',
+        accelerator: 'CmdOrCtrl+B',
+        click: () => {
+          sendToRenderer(MENU_CHANNELS.TOGGLE_LEFT_PANEL)
+        }
+      },
+      {
+        label: 'Toggle Outline Column',
+        accelerator: 'CmdOrCtrl+Shift+B',
+        click: () => {
+          sendToRenderer(MENU_CHANNELS.TOGGLE_RIGHT_PANEL)
+        }
+      },
+      { type: 'separator' },
       { role: 'reload' },
       { role: 'forceReload' },
       { role: 'toggleDevTools' },

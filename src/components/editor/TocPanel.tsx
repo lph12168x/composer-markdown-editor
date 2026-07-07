@@ -20,7 +20,14 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
     const levelCounts = new Map<number, number>()
     const result: Heading[] = []
     const lines = document.content.split('\n')
+    let inCodeBlock = false
     lines.forEach((line, index) => {
+      if (line.trimStart().startsWith('```')) {
+        inCodeBlock = !inCodeBlock
+        return
+      }
+      if (inCodeBlock) return
+
       const match = line.match(/^(#{1,6})\s+(.+)$/)
       if (match) {
         const level = match[1].length

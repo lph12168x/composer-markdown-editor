@@ -110,5 +110,7 @@ export const MENU_CHANNELS = {
   OPEN_FILE: 'menu:open-file',
   OPEN_RECENT_FOLDER: 'menu:open-recent-folder',
   OPEN_RECENT_FILE: 'menu:open-recent-file',
-  OPEN_RECENT_SSH: 'menu:open-recent-ssh'
+  OPEN_RECENT_SSH: 'menu:open-recent-ssh',
+  TOGGLE_LEFT_PANEL: 'menu:toggle-left-panel',
+  TOGGLE_RIGHT_PANEL: 'menu:toggle-right-panel'
 } as const
