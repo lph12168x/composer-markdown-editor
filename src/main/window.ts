@@ -113,12 +113,12 @@ export function createMainWindow(): BrowserWindow {
   })
 
   // Track whether the current document has unsaved changes.
-  ipcMain.on(APP_CHANNELS.MODIFIED, (_, modified: boolean) => {
+  ipcMain.handle(APP_CHANNELS.MODIFIED, (_, modified: boolean) => {
     documentModified = modified
   })
 
   // Allow the renderer to close the window after handling the prompt.
-  ipcMain.on(APP_CHANNELS.CLOSE_ALLOWED, () => {
+  ipcMain.handle(APP_CHANNELS.CLOSE_ALLOWED, () => {
     allowClose = true
     mainWindow?.close()
   })

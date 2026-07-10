@@ -7,7 +7,7 @@ import type { RecentSshConnection } from '../../types/ipc'
 interface SshConnectModalProps {
   onClose: () => void
   initialValues?: Partial<RecentSshConnection>
-  onConnected?: (homePath: string) => void
+  onConnected?: (homePath: string, config: SshConnectionConfig) => void
 }
 
 export function SshConnectModal({ onClose, initialValues, onConnected }: SshConnectModalProps): JSX.Element {
@@ -73,7 +73,7 @@ export function SshConnectModal({ onClose, initialValues, onConnected }: SshConn
 
     try {
       const status = await connect(config)
-      onConnected?.(status.homePath)
+      onConnected?.(status.homePath, config)
     } catch {
       // error is already stored in sshStore
     }

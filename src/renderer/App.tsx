@@ -42,6 +42,7 @@ function App(): JSX.Element {
   const [leftWidth, setLeftWidth] = useState(288)
   const [rightWidth, setRightWidth] = useState(224)
   const [gitPanelHeight, setGitPanelHeight] = useState(240)
+  const [gitExpanded, setGitExpanded] = useState(true)
   const [leftVisible, setLeftVisible] = useState(true)
   const [rightVisible, setRightVisible] = useState(true)
 
@@ -391,9 +392,13 @@ function App(): JSX.Element {
                 </div>
                 <div
                   className="overflow-hidden"
-                  style={{ height: gitPanelHeight, minHeight: 120, maxHeight: 480 }}
+                  style={{
+                    height: gitExpanded ? gitPanelHeight : 'auto',
+                    minHeight: gitExpanded ? 120 : 'auto',
+                    maxHeight: gitExpanded ? 480 : 'auto'
+                  }}
                 >
-                  <GitPanel root={activeRoot} />
+                  <GitPanel root={activeRoot} expanded={gitExpanded} onExpandedChange={setGitExpanded} />
                 </div>
               </>
             )}
@@ -401,7 +406,8 @@ function App(): JSX.Element {
           <div
             className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
             onMouseDown={startLeftResize}
-            title="Drag to resize"
+            onDoubleClick={() => setLeftVisible((v) => !v)}
+            title="Drag to resize, double-click to hide"
           >
             <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
           </div>
@@ -450,7 +456,8 @@ function App(): JSX.Element {
           <div
             className="group flex w-1 cursor-col-resize items-center justify-center border-l border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
             onMouseDown={startRightResize}
-            title="Drag to resize"
+            onDoubleClick={() => setRightVisible((v) => !v)}
+            title="Drag to resize, double-click to hide"
           >
             <div className="h-8 w-0.5 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
           </div>

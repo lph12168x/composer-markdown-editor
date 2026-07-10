@@ -72,6 +72,7 @@ export interface RecentSshConnection {
   username: string
   authType: 'password' | 'key' | 'agent'
   privateKeyPath?: string
+  lastPath?: string
 }
 
 export interface RecentFile {

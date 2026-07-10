@@ -64,7 +64,7 @@ export function SettingsModal({ onClose, onOpenRemoteFolder }: SettingsModalProp
 
     try {
       const status = await connect(toConnectionConfig(connection))
-      onOpenRemoteFolder?.(status.homePath)
+      onOpenRemoteFolder?.(connection.lastPath ?? status.homePath)
     } catch (err) {
       setDirectError(err instanceof Error ? err.message : 'Failed to connect')
     }
@@ -158,9 +158,9 @@ export function SettingsModal({ onClose, onOpenRemoteFolder }: SettingsModalProp
         <SshConnectModal
           initialValues={reconnectConnection}
           onClose={() => setReconnectConnection(null)}
-          onConnected={(homePath) => {
+          onConnected={(homePath, _config) => {
             setReconnectConnection(null)
-            onOpenRemoteFolder?.(homePath)
+            onOpenRemoteFolder?.(reconnectConnection.lastPath ?? homePath)
           }}
         />
       )}

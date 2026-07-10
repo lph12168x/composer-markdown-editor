@@ -9,6 +9,8 @@ import { BranchSelect } from './BranchSelect'
 
 interface GitPanelProps {
   root: WorkspaceRoot
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
 }
 
 function getChangeIcon(status: string): JSX.Element {
@@ -58,10 +60,9 @@ function formatLogDate(date: string): string {
   }
 }
 
-export function GitPanel({ root }: GitPanelProps): JSX.Element {
+export function GitPanel({ root, expanded, onExpandedChange }: GitPanelProps): JSX.Element {
   const { repos, loading, error, loadStatus, initRepo, stage, unstage } = useGitStore()
   const { openDiff } = useUiStore()
-  const [expanded, setExpanded] = useState(true)
   const [commitTarget, setCommitTarget] = useState<string | null>(null)
   const [historyExpanded, setHistoryExpanded] = useState<Record<string, boolean>>({})
 
@@ -92,7 +93,7 @@ export function GitPanel({ root }: GitPanelProps): JSX.Element {
   return (
     <div className="flex h-full flex-col border-t border-neutral-200 p-3 dark:border-neutral-700">
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => onExpandedChange(!expanded)}
         className="mb-2 flex w-full items-center justify-between"
       >
         <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">Git</span>

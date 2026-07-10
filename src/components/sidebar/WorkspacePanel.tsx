@@ -17,6 +17,7 @@ export function WorkspacePanel(): JSX.Element {
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [remotePickerHomePath, setRemotePickerHomePath] = useState<string | null>(null)
   const [menuReconnectConnection, setMenuReconnectConnection] = useState<RecentSshConnection | null>(null)
+  const [pendingConnection, setPendingConnection] = useState<RecentSshConnection | null>(null)
   const [sshError, setSshError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
 
@@ -59,15 +60,48 @@ export function WorkspacePanel(): JSX.Element {
     privateKeyPath: connection.authType === 'key' ? connection.privateKeyPath : undefined
   })
 
+  const toRecentConnection = (config: SshConnectionConfig): RecentSshConnection => ({
+    host: config.host,
+    port: config.port,
+    username: config.username,
+    authType: config.auth === 'privateKey' ? 'key' : config.auth,
+    privateKeyPath: config.auth === 'privateKey' ? config.privateKeyPath : undefined
+  })
+
+  const handleSelectRemotePath = useCallback(
+    (selectedPath: string, connection?: RecentSshConnection): void => {
+      setRemotePickerHomePath(null)
+      const conn = connection || pendingConnection
+      if (conn) {
+        void settingsClient.addRecentConnection({ ...conn, lastPath: selectedPath })
+        setPendingConnection(null)
+      }
+      const name = selectedPath === '/' ? 'Remote Root' : selectedPath.split('/').pop() || selectedPath
+      addSshRoot({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        type: 'ssh',
+        name: `${name} (SSH)`,
+        path: selectedPath
+      })
+    },
+    [addSshRoot, pendingConnection]
+  )
+
   const handleDirectSshConnect = useCallback(async (connection: RecentSshConnection): Promise<void> => {
     setSshError(null)
     try {
       const status = await connect(toConnectionConfig(connection))
-      setRemotePickerHomePath(status.homePath)
+      if (connection.lastPath) {
+        handleSelectRemotePath(connection.lastPath, connection)
+      } else {
+        setPendingConnection(connection)
+        setRemotePickerHomePath(status.homePath)
+      }
     } catch (err) {
       setSshError(err instanceof Error ? err.message : 'Failed to connect')
+      setPendingConnection(null)
     }
-  }, [connect])
+  }, [connect, handleSelectRemotePath])
 
   const handleOpenFolder = async (): Promise<void> => {
     const path = await fileSystemClient.openFolder()
@@ -90,17 +124,6 @@ export function WorkspacePanel(): JSX.Element {
     window.addEventListener('ssh:menu-reconnect', handleMenuReconnect)
     return () => window.removeEventListener('ssh:menu-reconnect', handleMenuReconnect)
   }, [handleDirectSshConnect])
-
-  const handleSelectRemotePath = (selectedPath: string): void => {
-    setRemotePickerHomePath(null)
-    const name = selectedPath === '/' ? 'Remote Root' : selectedPath.split('/').pop() || selectedPath
-    addSshRoot({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-      type: 'ssh',
-      name: `${name} (SSH)`,
-      path: selectedPath
-    })
-  }
 
   return (
     <div className="border-b border-neutral-200 p-3 dark:border-neutral-700">
@@ -184,8 +207,9 @@ export function WorkspacePanel(): JSX.Element {
       {showSshModal && (
         <SshConnectModal
           onClose={() => setShowSshModal(false)}
-          onConnected={(homePath) => {
+          onConnected={(homePath, config) => {
             setShowSshModal(false)
+            setPendingConnection(toRecentConnection(config))
             setRemotePickerHomePath(homePath)
           }}
         />
@@ -194,9 +218,16 @@ export function WorkspacePanel(): JSX.Element {
         <SshConnectModal
           initialValues={menuReconnectConnection}
           onClose={() => setMenuReconnectConnection(null)}
-          onConnected={(homePath) => {
+          onConnected={(homePath, _config) => {
             setMenuReconnectConnection(null)
-            setRemotePickerHomePath(homePath)
+            const conn = menuReconnectConnection
+            if (!conn) return
+            if (conn.lastPath) {
+              handleSelectRemotePath(conn.lastPath, conn)
+            } else {
+              setPendingConnection(conn)
+              setRemotePickerHomePath(homePath)
+            }
           }}
         />
       )}
@@ -204,7 +235,10 @@ export function WorkspacePanel(): JSX.Element {
         <RemotePathPicker
           defaultPath={remotePickerHomePath}
           onSelect={handleSelectRemotePath}
-          onClose={() => setRemotePickerHomePath(null)}
+          onClose={() => {
+            setRemotePickerHomePath(null)
+            setPendingConnection(null)
+          }}
         />
       )}
       {showSettingsModal && (
