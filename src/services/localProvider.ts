@@ -40,6 +40,24 @@ export class LocalFileSystemProvider implements FileSystemProvider {
     return fs.readFile(ref.path, 'utf-8')
   }
 
+  async readFileAsDataUrl(ref: FileRef): Promise<string> {
+    const buffer = await fs.readFile(ref.path)
+    const ext = path.extname(ref.path).toLowerCase()
+    const mime =
+      ext === '.png'
+        ? 'image/png'
+        : ext === '.jpg' || ext === '.jpeg'
+          ? 'image/jpeg'
+          : ext === '.gif'
+            ? 'image/gif'
+            : ext === '.webp'
+              ? 'image/webp'
+              : ext === '.svg'
+                ? 'image/svg+xml'
+                : 'application/octet-stream'
+    return `data:${mime};base64,${buffer.toString('base64')}`
+  }
+
   async writeFile(ref: FileRef, content: string): Promise<void> {
     await fs.writeFile(ref.path, content, 'utf-8')
   }

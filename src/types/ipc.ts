@@ -3,6 +3,7 @@ import type { FileRef, WorkspaceRoot } from './file'
 export const FS_CHANNELS = {
   READ_DIR: 'fs:readDir',
   READ_FILE: 'fs:readFile',
+  READ_FILE_DATA_URL: 'fs:readFileAsDataUrl',
   WRITE_FILE: 'fs:writeFile',
   CREATE_FILE: 'fs:createFile',
   CREATE_DIR: 'fs:createDir',

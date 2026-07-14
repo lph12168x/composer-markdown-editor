@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { useWorkspaceStore } from '../stores/workspaceStore'
 import { useDocumentStore } from '../stores/fileStore'
+import { useSshStore } from '../stores/sshStore'
 import { WorkspacePanel } from '../components/sidebar/WorkspacePanel'
 import { FileTree } from '../components/sidebar/FileTree'
 import { GitPanel } from '../components/git/GitPanel'
@@ -255,20 +256,30 @@ function App(): JSX.Element {
   useEffect(() => {
     return window.electronAPI.onMenuAction((action, payload) => {
       if (action === 'open-folder') {
-        void handleOpenFolder()
+        const { isConnected } = useSshStore.getState()
+        if (isConnected) {
+          window.dispatchEvent(new CustomEvent('ssh:open-folder'))
+        } else {
+          void handleOpenFolder()
+        }
       } else if (action === 'open-file') {
-        void (async () => {
-          const filePath = await fileSystemClient.openFile()
-          if (filePath) {
-            try {
-              await openLocalFileByPath(filePath)
-            } catch (err) {
-              const message = err instanceof Error ? err.message : 'Failed to open file'
-              window.alert(message)
-              console.error('Failed to open file:', err)
+        const { isConnected } = useSshStore.getState()
+        if (isConnected) {
+          window.dispatchEvent(new CustomEvent('ssh:open-file'))
+        } else {
+          void (async () => {
+            const filePath = await fileSystemClient.openFile()
+            if (filePath) {
+              try {
+                await openLocalFileByPath(filePath)
+              } catch (err) {
+                const message = err instanceof Error ? err.message : 'Failed to open file'
+                window.alert(message)
+                console.error('Failed to open file:', err)
+              }
             }
-          }
-        })()
+          })()
+        }
       } else if (action === 'open-recent-folder' && typeof payload === 'string') {
         handleAddLocalRoot(payload)
       } else if (action === 'open-recent-file' && payload && typeof payload === 'object') {

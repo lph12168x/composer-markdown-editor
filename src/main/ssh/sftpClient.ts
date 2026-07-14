@@ -30,6 +30,10 @@ export async function sftpReadFile(sftp: SFTPWrapper, path: string): Promise<str
   return promisify((cb) => sftp.readFile(path, 'utf8', cb))
 }
 
+export async function sftpReadFileBuffer(sftp: SFTPWrapper, path: string): Promise<Buffer> {
+  return promisify((cb) => sftp.readFile(path, cb))
+}
+
 export async function sftpWriteFile(sftp: SFTPWrapper, path: string, content: string): Promise<void> {
   return promisify((cb) => sftp.writeFile(path, content, 'utf8', cb))
 }

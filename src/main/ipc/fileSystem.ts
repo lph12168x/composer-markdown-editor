@@ -28,6 +28,10 @@ export function registerFileSystemIPC(): void {
     return content
   })
 
+  ipcMain.handle(FS_CHANNELS.READ_FILE_DATA_URL, async (_, ref: FileRef) => {
+    return fileSystemService.readFileAsDataUrl(ref)
+  })
+
   ipcMain.handle(FS_CHANNELS.WRITE_FILE, async (_, payload: WriteFilePayload) => {
     pauseFileWatcher()
     try {

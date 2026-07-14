@@ -42,6 +42,7 @@ export interface FileStat {
 export interface FileSystemProvider {
   readDir(root: WorkspaceRoot, ref: FileRef): Promise<FileRef[]>
   readFile(ref: FileRef): Promise<string>
+  readFileAsDataUrl(ref: FileRef): Promise<string>
   writeFile(ref: FileRef, content: string): Promise<void>
   createFile(parent: FileRef, name: string): Promise<FileRef>
   createDir(parent: FileRef, name: string): Promise<FileRef>

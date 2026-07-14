@@ -6,18 +6,23 @@ import { fileSystemClient } from '../../services/fileSystemClient'
 import { settingsClient } from '../../services/settingsClient'
 import type { RecentSshConnection, ThemeSetting } from '../../types/ipc'
 import type { SshConnectionConfig } from '../../types/ssh'
+import type { FileRef } from '../../types/file'
+import { posixBasename, posixDirname } from '../../utils/path'
 import { SshConnectModal } from '../modals/SshConnectModal'
 import { RemotePathPicker } from '../modals/RemotePathPicker'
+import { RemoteFilePicker } from '../modals/RemoteFilePicker'
 import { SettingsModal } from '../modals/SettingsModal'
 
 export function WorkspacePanel(): JSX.Element {
   const { workspace, activeRootId, addLocalRoot, addSshRoot, removeRoot, setActiveRoot } = useWorkspaceStore()
-  const { connect } = useSshStore()
+  const { connect, isConnected } = useSshStore()
   const [showSshModal, setShowSshModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [remotePickerHomePath, setRemotePickerHomePath] = useState<string | null>(null)
+  const [remoteFilePickerPath, setRemoteFilePickerPath] = useState<string | null>(null)
   const [menuReconnectConnection, setMenuReconnectConnection] = useState<RecentSshConnection | null>(null)
   const [pendingConnection, setPendingConnection] = useState<RecentSshConnection | null>(null)
+  const [sshHomePath, setSshHomePath] = useState<string | null>(null)
   const [sshError, setSshError] = useState<string | null>(null)
   const [isDark, setIsDark] = useState(false)
 
@@ -87,28 +92,71 @@ export function WorkspacePanel(): JSX.Element {
     [addSshRoot, pendingConnection]
   )
 
+  const openRemoteFolderPicker = useCallback(async (): Promise<void> => {
+    let conn = pendingConnection
+    if (!conn) {
+      const { host, username } = useSshStore.getState()
+      if (host && username) {
+        const connections = await settingsClient.listRecentConnections()
+        conn = connections.find((c) => c.host === host && c.username === username) || null
+      }
+    }
+    setRemotePickerHomePath(conn?.lastPath || sshHomePath || '/')
+  }, [pendingConnection, sshHomePath])
+
+  const openRemoteFilePicker = useCallback(async (): Promise<void> => {
+    let conn = pendingConnection
+    if (!conn) {
+      const { host, username } = useSshStore.getState()
+      if (host && username) {
+        const connections = await settingsClient.listRecentConnections()
+        conn = connections.find((c) => c.host === host && c.username === username) || null
+      }
+    }
+    const basePath = conn?.lastPath || sshHomePath || '/'
+    setRemoteFilePickerPath(posixDirname(basePath))
+  }, [pendingConnection, sshHomePath])
+
+  const handleSelectRemoteFile = useCallback(
+    (selectedPath: string): void => {
+      setRemoteFilePickerPath(null)
+      const ref: FileRef = {
+        id: `ssh-drop:${selectedPath}`,
+        rootId: 'ssh-drop',
+        type: 'ssh',
+        path: selectedPath,
+        name: posixBasename(selectedPath),
+        isDirectory: false
+      }
+      window.dispatchEvent(new CustomEvent('file:open', { detail: ref }))
+    },
+    []
+  )
+
   const handleDirectSshConnect = useCallback(async (connection: RecentSshConnection): Promise<void> => {
     setSshError(null)
     try {
       const status = await connect(toConnectionConfig(connection))
-      if (connection.lastPath) {
-        handleSelectRemotePath(connection.lastPath, connection)
-      } else {
-        setPendingConnection(connection)
-        setRemotePickerHomePath(status.homePath)
-      }
+      setPendingConnection(connection)
+      setSshHomePath(status.homePath)
+      setRemotePickerHomePath(connection.lastPath || status.homePath)
     } catch (err) {
       setSshError(err instanceof Error ? err.message : 'Failed to connect')
       setPendingConnection(null)
+      setSshHomePath(null)
     }
-  }, [connect, handleSelectRemotePath])
+  }, [connect])
 
-  const handleOpenFolder = async (): Promise<void> => {
-    const path = await fileSystemClient.openFolder()
-    if (path) {
-      addLocalRoot(path)
+  const handleOpenFolder = useCallback(async (): Promise<void> => {
+    if (isConnected) {
+      await openRemoteFolderPicker()
+    } else {
+      const path = await fileSystemClient.openFolder()
+      if (path) {
+        addLocalRoot(path)
+      }
     }
-  }
+  }, [isConnected, addLocalRoot, openRemoteFolderPicker])
 
   useEffect(() => {
     const handleMenuReconnect = (e: Event): void => {
@@ -124,6 +172,28 @@ export function WorkspacePanel(): JSX.Element {
     window.addEventListener('ssh:menu-reconnect', handleMenuReconnect)
     return () => window.removeEventListener('ssh:menu-reconnect', handleMenuReconnect)
   }, [handleDirectSshConnect])
+
+  useEffect(() => {
+    const handleOpenRemoteFolder = async (): Promise<void> => {
+      const { isConnected: connected } = useSshStore.getState()
+      if (connected) {
+        await openRemoteFolderPicker()
+      }
+    }
+    window.addEventListener('ssh:open-folder', handleOpenRemoteFolder)
+    return () => window.removeEventListener('ssh:open-folder', handleOpenRemoteFolder)
+  }, [openRemoteFolderPicker])
+
+  useEffect(() => {
+    const handleOpenRemoteFile = async (): Promise<void> => {
+      const { isConnected: connected } = useSshStore.getState()
+      if (connected) {
+        await openRemoteFilePicker()
+      }
+    }
+    window.addEventListener('ssh:open-file', handleOpenRemoteFile)
+    return () => window.removeEventListener('ssh:open-file', handleOpenRemoteFile)
+  }, [openRemoteFilePicker])
 
   return (
     <div className="border-b border-neutral-200 p-3 dark:border-neutral-700">
@@ -209,7 +279,9 @@ export function WorkspacePanel(): JSX.Element {
           onClose={() => setShowSshModal(false)}
           onConnected={(homePath, config) => {
             setShowSshModal(false)
-            setPendingConnection(toRecentConnection(config))
+            const conn = toRecentConnection(config)
+            setPendingConnection(conn)
+            setSshHomePath(homePath)
             setRemotePickerHomePath(homePath)
           }}
         />
@@ -222,12 +294,9 @@ export function WorkspacePanel(): JSX.Element {
             setMenuReconnectConnection(null)
             const conn = menuReconnectConnection
             if (!conn) return
-            if (conn.lastPath) {
-              handleSelectRemotePath(conn.lastPath, conn)
-            } else {
-              setPendingConnection(conn)
-              setRemotePickerHomePath(homePath)
-            }
+            setPendingConnection(conn)
+            setSshHomePath(homePath)
+            setRemotePickerHomePath(conn.lastPath || homePath)
           }}
         />
       )}
@@ -239,6 +308,13 @@ export function WorkspacePanel(): JSX.Element {
             setRemotePickerHomePath(null)
             setPendingConnection(null)
           }}
+        />
+      )}
+      {remoteFilePickerPath && (
+        <RemoteFilePicker
+          defaultPath={remoteFilePickerPath}
+          onSelect={handleSelectRemoteFile}
+          onClose={() => setRemoteFilePickerPath(null)}
         />
       )}
       {showSettingsModal && (

@@ -5,6 +5,7 @@ import {
   sftpCreateFile,
   sftpMkdir,
   sftpReadFile,
+  sftpReadFileBuffer,
   sftpReaddir,
   sftpRemoveRecursive,
   sftpRename,
@@ -41,6 +42,25 @@ export class SshFileSystemProvider implements FileSystemProvider {
   async readFile(ref: FileRef): Promise<string> {
     const sftp = await sshConnectionManager.getSftp()
     return sftpReadFile(sftp, ref.path)
+  }
+
+  async readFileAsDataUrl(ref: FileRef): Promise<string> {
+    const sftp = await sshConnectionManager.getSftp()
+    const buffer = await sftpReadFileBuffer(sftp, ref.path)
+    const ext = path.posix.extname(ref.path).toLowerCase()
+    const mime =
+      ext === '.png'
+        ? 'image/png'
+        : ext === '.jpg' || ext === '.jpeg'
+          ? 'image/jpeg'
+          : ext === '.gif'
+            ? 'image/gif'
+            : ext === '.webp'
+              ? 'image/webp'
+              : ext === '.svg'
+                ? 'image/svg+xml'
+                : 'application/octet-stream'
+    return `data:${mime};base64,${buffer.toString('base64')}`
   }
 
   async writeFile(ref: FileRef, content: string): Promise<void> {

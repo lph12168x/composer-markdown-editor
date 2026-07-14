@@ -106,14 +106,15 @@ function sanitizeHtml(html: string): string {
       'fill-opacity',
       'stroke-opacity',
       'dy'
-    ]
+    ],
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|xxx|data):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i
   })
 }
 
-function resolveSvgPath(src: string, baseRef?: FileRef): string | null {
+function resolveImagePath(src: string, baseRef?: FileRef): string | null {
   if (!baseRef) return null
   if (/^(https?:|data:|file:|\/)/i.test(src)) return null
-  if (!src.toLowerCase().endsWith('.svg')) return null
 
   const separator = baseRef.type === 'ssh' ? '/' : /[/\\]/
   const baseParts = baseRef.path.split(separator).filter((part) => part.length > 0)
@@ -165,8 +166,9 @@ async function inlineSvgImages(container: HTMLElement, baseRef?: FileRef): Promi
   for (const img of images) {
     const src = img.getAttribute('src')
     if (!src) continue
+    if (!src.toLowerCase().endsWith('.svg')) continue
 
-    const svgPath = resolveSvgPath(src, baseRef)
+    const svgPath = resolveImagePath(src, baseRef)
     if (!svgPath) continue
 
     try {
@@ -196,6 +198,33 @@ async function inlineSvgImages(container: HTMLElement, baseRef?: FileRef): Promi
   }
 }
 
+async function inlineRasterImages(container: HTMLElement, baseRef?: FileRef): Promise<void> {
+  if (!baseRef) return
+
+  const images = container.querySelectorAll('img')
+  for (const img of images) {
+    const src = img.getAttribute('src')
+    if (!src) continue
+    if (src.toLowerCase().endsWith('.svg')) continue
+
+    const imagePath = resolveImagePath(src, baseRef)
+    if (!imagePath) continue
+
+    try {
+      const dataUrl = await fileSystemClient.readFileAsDataUrl({
+        ...baseRef,
+        path: imagePath,
+        name: imagePath.split(/[/\\]/).pop() || imagePath,
+        id: `${baseRef.rootId}:${imagePath}`,
+        isDirectory: false
+      })
+      img.setAttribute('src', dataUrl)
+    } catch (err) {
+      console.error(`Failed to load image ${src}:`, err)
+    }
+  }
+}
+
 export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -214,6 +243,9 @@ export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX
       if (cancelled) return
 
       await inlineSvgImages(temp, baseRef)
+      if (cancelled) return
+
+      await inlineRasterImages(temp, baseRef)
       if (cancelled) return
 
       const sanitized = sanitizeHtml(temp.innerHTML)

@@ -23,6 +23,10 @@ class FileSystemService {
     return this.getProvider(ref.type).readFile(ref)
   }
 
+  async readFileAsDataUrl(ref: FileRef): Promise<string> {
+    return this.getProvider(ref.type).readFileAsDataUrl(ref)
+  }
+
   async writeFile(ref: FileRef, content: string): Promise<void> {
     return this.getProvider(ref.type).writeFile(ref, content)
   }

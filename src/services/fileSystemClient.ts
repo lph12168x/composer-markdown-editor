@@ -17,6 +17,10 @@ class FileSystemClient {
     return window.electronAPI.invoke<string>(FS_CHANNELS.READ_FILE, ref)
   }
 
+  async readFileAsDataUrl(ref: FileRef): Promise<string> {
+    return window.electronAPI.invoke<string>(FS_CHANNELS.READ_FILE_DATA_URL, ref)
+  }
+
   async writeFile(ref: FileRef, content: string): Promise<void> {
     const payload: WriteFilePayload = { ref, content }
     return window.electronAPI.invoke<void>(FS_CHANNELS.WRITE_FILE, payload)

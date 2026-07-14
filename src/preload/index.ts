@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 const allowedChannels = [
   'fs:readDir',
   'fs:readFile',
+  'fs:readFileAsDataUrl',
   'fs:writeFile',
   'fs:createFile',
   'fs:createDir',
