@@ -116,6 +116,7 @@ function resolveImagePath(src: string, baseRef?: FileRef): string | null {
   if (!baseRef) return null
   if (/^(https?:|data:|file:|\/)/i.test(src)) return null
 
+  const isAbsoluteUnix = baseRef.path.startsWith('/')
   const separator = baseRef.type === 'ssh' ? '/' : /[/\\]/
   const baseParts = baseRef.path.split(separator).filter((part) => part.length > 0)
   baseParts.pop() // remove file name, keep directory
@@ -127,7 +128,7 @@ function resolveImagePath(src: string, baseRef?: FileRef): string | null {
 
   const relativeParts = src.split('/').filter((part) => part.length > 0)
   const resolved = [...baseParts, ...relativeParts]
-  return baseRef.type === 'ssh' ? '/' + resolved.join('/') : resolved.join('/')
+  return baseRef.type === 'ssh' || isAbsoluteUnix ? '/' + resolved.join('/') : resolved.join('/')
 }
 
 async function renderMermaidBlocks(container: HTMLElement): Promise<void> {

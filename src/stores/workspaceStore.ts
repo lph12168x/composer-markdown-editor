@@ -66,18 +66,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   removeRoot: (rootId: string) => {
     set((state) => {
       const root = state.workspace.roots.find((r) => r.id === rootId)
-      if (root?.type === 'ssh') {
+      const remainingRoots = state.workspace.roots.filter((r) => r.id !== rootId)
+      if (root?.type === 'ssh' && !remainingRoots.some((r) => r.type === 'ssh')) {
         void useSshStore.getState().disconnect()
       }
 
       return {
         workspace: {
           ...state.workspace,
-          roots: state.workspace.roots.filter((r) => r.id !== rootId)
+          roots: remainingRoots
         },
         activeRootId:
           state.activeRootId === rootId
-            ? state.workspace.roots.find((r) => r.id !== rootId)?.id || null
+            ? remainingRoots.find((r) => r.id !== rootId)?.id || null
             : state.activeRootId
       }
     })

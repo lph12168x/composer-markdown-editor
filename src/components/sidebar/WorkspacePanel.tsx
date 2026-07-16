@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { FolderOpen, Server, Settings, Sun, Moon, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
+import { useFileTreeStore } from '../../stores/fileStore'
 import { useSshStore } from '../../stores/sshStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { settingsClient } from '../../services/settingsClient'
@@ -81,6 +82,16 @@ export function WorkspacePanel(): JSX.Element {
         void settingsClient.addRecentConnection({ ...conn, lastPath: selectedPath })
         setPendingConnection(null)
       }
+
+      const existingRoot = useWorkspaceStore.getState().workspace.roots.find(
+        (r) => r.type === 'ssh' && r.path === selectedPath
+      )
+      if (existingRoot) {
+        useFileTreeStore.getState().clearTree(existingRoot.id)
+        setActiveRoot(existingRoot.id)
+        return
+      }
+
       const name = selectedPath === '/' ? 'Remote Root' : selectedPath.split('/').pop() || selectedPath
       addSshRoot({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -89,7 +100,7 @@ export function WorkspacePanel(): JSX.Element {
         path: selectedPath
       })
     },
-    [addSshRoot, pendingConnection]
+    [addSshRoot, pendingConnection, setActiveRoot]
   )
 
   const openRemoteFolderPicker = useCallback(async (): Promise<void> => {
