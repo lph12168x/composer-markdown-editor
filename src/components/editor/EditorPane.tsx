@@ -9,8 +9,21 @@ import { MarkdownPreview } from './MarkdownPreview'
 import { SourceEditor } from './SourceEditor'
 import { DiffViewer } from './DiffViewer'
 import { StatusBar } from './StatusBar'
+import type { Heading } from './TocPanel'
 
-export function EditorPane(): JSX.Element {
+export interface EditorPaneProps {
+  /**
+   * Called by editors that drive the outline highlight themselves (currently
+   * only `SourceEditor`; `MarkdownEditor` / `MarkdownPreview` observe the DOM
+   * directly via the App-level IntersectionObserver).
+   *
+   * Caller is responsible for any click-driven lock so the outline click
+   * that scrolled the body is not clobbered by the editor's own report.
+   */
+  onActiveHeadingChange?: (heading: Heading | null) => void
+}
+
+export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX.Element {
   const {
     document,
     documents,
@@ -164,7 +177,12 @@ export function EditorPane(): JSX.Element {
           ) : editorMode === 'preview' ? (
             <MarkdownPreview content={document.content} baseRef={document.ref} />
           ) : (
-            <SourceEditor key={document.ref.id} content={document.rawContent} onChange={updateRawContent} />
+            <SourceEditor
+              key={document.ref.id}
+              content={document.rawContent}
+              onChange={updateRawContent}
+              onActiveHeadingChange={onActiveHeadingChange}
+            />
           )
         ) : (
           <div className="flex h-full items-center justify-center text-neutral-400 dark:text-neutral-500">

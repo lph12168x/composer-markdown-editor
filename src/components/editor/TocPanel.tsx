@@ -1,48 +1,35 @@
 import { useMemo } from 'react'
 import type { Document } from '../../types/file'
+import { parseMarkdownHeadings, type ParsedHeading } from '../../utils/markdownHeadings'
 
-export interface Heading {
-  level: number
-  text: string
-  line: number
-  levelIndex: number  // index among headings of the same level
-}
+export type { ParsedHeading as Heading } from '../../utils/markdownHeadings'
+type Heading = ParsedHeading
 
 interface TocPanelProps {
   document: Document | null
   onHeadingClick?: (heading: Heading) => void
+  /**
+   * The heading currently visible at the top of the editor scroller.
+   * Pass `null` or omit to disable highlighting (e.g. while clicking the
+   * outline jumps the body before the observer settles).
+   */
+  activeHeading?: Heading | null
 }
 
-export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Element {
-  const headings = useMemo(() => {
-    if (!document) return []
+/** Stable identity for a heading entry. Matches the DOM lookup the App uses. */
+function headingKey(h: Pick<Heading, 'level' | 'levelIndex'>): string {
+  return `${h.level}:${h.levelIndex}`
+}
 
-    const levelCounts = new Map<number, number>()
-    const result: Heading[] = []
-    const lines = document.content.split('\n')
-    let inCodeBlock = false
-    lines.forEach((line, index) => {
-      if (line.trimStart().startsWith('```')) {
-        inCodeBlock = !inCodeBlock
-        return
-      }
-      if (inCodeBlock) return
-
-      const match = line.match(/^(#{1,6})\s+(.+)$/)
-      if (match) {
-        const level = match[1].length
-        const levelIndex = levelCounts.get(level) || 0
-        levelCounts.set(level, levelIndex + 1)
-        result.push({
-          level,
-          text: match[2].trim(),
-          line: index,
-          levelIndex
-        })
-      }
-    })
-    return result
-  }, [document])
+export function TocPanel({
+  document,
+  onHeadingClick,
+  activeHeading
+}: TocPanelProps): JSX.Element {
+  const headings = useMemo(
+    () => (document ? parseMarkdownHeadings(document.content) : []),
+    [document]
+  )
 
   if (!document) {
     return (
@@ -66,20 +53,28 @@ export function TocPanel({ document, onHeadingClick }: TocPanelProps): JSX.Eleme
         Outline
       </div>
       <ul className="space-y-1">
-        {headings.map((heading, index) => (
-          <li
-            key={index}
-            style={{ paddingLeft: `${(heading.level - 1) * 12}px` }}
-          >
-            <button
-              onClick={() => onHeadingClick?.(heading)}
-              className="w-full truncate text-left text-xs text-neutral-700 hover:text-blue-600 dark:text-neutral-300 dark:hover:text-blue-400"
-              title={heading.text}
+        {headings.map((heading, index) => {
+          const isActive =
+            activeHeading != null && headingKey(heading) === headingKey(activeHeading)
+          return (
+            <li
+              key={index}
+              style={{ paddingLeft: `${(heading.level - 1) * 12}px` }}
             >
-              {heading.text}
-            </button>
-          </li>
-        ))}
+              <button
+                onClick={() => onHeadingClick?.(heading)}
+                className={`w-full truncate text-left text-xs ${
+                  isActive
+                    ? 'font-medium text-blue-600 dark:text-blue-400'
+                    : 'text-neutral-700 hover:text-blue-600 dark:text-neutral-300 dark:hover:text-blue-400'
+                }`}
+                title={heading.text}
+              >
+                {heading.text}
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </div>
   )
