@@ -1,5 +1,6 @@
 import type { EditorProps } from '../../types/editor'
 import { MilkdownEditor } from './MilkdownEditor'
+import type { FindController } from './FindBar'
 
 /**
  * Markdown editor adapter.
@@ -15,6 +16,11 @@ import { MilkdownEditor } from './MilkdownEditor'
  * - Render headings as standard semantic `<h1>` ... `<h6>` elements so that the
  *   outline panel can scroll to them.
  */
-export function MarkdownEditor(props: EditorProps): JSX.Element {
+export interface MarkdownEditorProps extends EditorProps {
+  /** See `MilkdownEditor.onFindController`. */
+  onFindController?: (controller: FindController) => void
+}
+
+export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
   return <MilkdownEditor {...props} />
 }

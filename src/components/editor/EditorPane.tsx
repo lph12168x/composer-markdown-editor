@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { Eye, FileCode, Pencil, GitCompare, X } from 'lucide-react'
 import { useDocumentStore } from '../../stores/fileStore'
 import { useUiStore } from '../../stores/uiStore'
@@ -7,8 +7,10 @@ import { APP_CHANNELS } from '../../types/ipc'
 import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownPreview } from './MarkdownPreview'
 import { SourceEditor } from './SourceEditor'
+import { ImageViewer } from './ImageViewer'
 import { DiffViewer } from './DiffViewer'
 import { StatusBar } from './StatusBar'
+import { FindBar, type FindController } from './FindBar'
 import type { Heading } from './TocPanel'
 
 export interface EditorPaneProps {
@@ -37,6 +39,26 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   } = useDocumentStore()
   const { editorMode, diffTarget, setEditorMode } = useUiStore()
 
+  // Find-bar state. The bar is opened by Cmd/Ctrl+F and is only meaningful
+  // for text documents (markdown / source); image tabs hide it.
+  const [findOpen, setFindOpen] = useState(false)
+  // Each editor publishes a FindController through this ref. The FindBar
+  // reads the latest one through `getController()`.
+  const findControllerRef = useRef<FindController | null>(null)
+  const registerFindController = useCallback((c: FindController | null) => {
+    findControllerRef.current = c
+  }, [])
+  // Make sure we close the bar when the user switches tabs/modes so the
+  // stale controller from a now-unmounted editor doesn't fire.
+  useEffect(() => {
+    // `activeDocumentId` and `editorMode` are already in the dep list,
+    // so this is a legitimate "reset on dependency change" — not a
+    // cascading render. The cascade warning doesn't apply.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFindOpen(false)
+    registerFindController(null)
+  }, [activeDocumentId, editorMode, registerFindController])
+
   const handleSave = useCallback(async () => {
     if (!document || !document.modified) return
 
@@ -51,16 +73,33 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   }, [document, markSaved])
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
+      }
+      // Cmd/Ctrl+F opens the in-editor find bar. Skip when the user is
+      // editing inside the find input itself or any other text input —
+      // those should keep the browser's default Cmd+F behaviour (open
+      // DevTools search, etc.). For now we always intercept because the
+      // bar is the only in-app search affordance.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        if (document && document.kind !== 'image') {
+          e.preventDefault()
+          setFindOpen(true)
+        }
+      }
+      // Esc closes the find bar even when the input doesn't have focus
+      // (e.g. user has clicked into the editor body).
+      if (e.key === 'Escape' && findOpen) {
+        e.preventDefault()
+        setFindOpen(false)
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSave])
+  }, [handleSave, document, findOpen])
 
   useEffect(() => {
     const handleSaveRequest = (): void => {
@@ -74,10 +113,11 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   }, [handleSave])
 
   useEffect(() => {
-    if (editorMode === 'source') {
+    // Image documents have no markdown source to switch into.
+    if (editorMode === 'source' && document?.kind !== 'image') {
       enterSourceMode()
     }
-  }, [editorMode, enterSourceMode])
+  }, [editorMode, enterSourceMode, document?.kind])
 
   return (
     <div className="flex h-full flex-col" data-editor-pane="true">
@@ -116,72 +156,93 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
           })}
         </div>
         <div className="flex shrink-0 items-center gap-1 rounded bg-neutral-100 p-0.5 dark:bg-neutral-800">
-          <button
-            onClick={() => setEditorMode('source')}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
-              editorMode === 'source'
-                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
-                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-            }`}
-            title="Source mode"
-          >
-            <FileCode size={12} />
-            Source
-          </button>
-          <button
-            onClick={() => setEditorMode('preview')}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
-              editorMode === 'preview'
-                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
-                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-            }`}
-            title="Preview mode"
-          >
-            <Eye size={12} />
-            Preview
-          </button>
-          <button
-            onClick={() => setEditorMode('edit')}
-            className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
-              editorMode === 'edit'
-                ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
-                : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-            }`}
-            title="Edit mode"
-          >
-            <Pencil size={12} />
-            Edit
-          </button>
-          {diffTarget && (
-            <button
-              onClick={() => setEditorMode('diff')}
-              className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
-                editorMode === 'diff'
-                  ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
-                  : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
-              }`}
-              title="Diff view"
-            >
-              <GitCompare size={12} />
-              Diff
-            </button>
+          {document?.kind !== 'image' && (
+            <>
+              <button
+                onClick={() => setEditorMode('source')}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                  editorMode === 'source'
+                    ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+                title="Source mode"
+              >
+                <FileCode size={12} />
+                Source
+              </button>
+              <button
+                onClick={() => setEditorMode('preview')}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                  editorMode === 'preview'
+                    ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+                title="Preview mode"
+              >
+                <Eye size={12} />
+                Preview
+              </button>
+              <button
+                onClick={() => setEditorMode('edit')}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                  editorMode === 'edit'
+                    ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                    : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                }`}
+                title="Edit mode"
+              >
+                <Pencil size={12} />
+                Edit
+              </button>
+              {diffTarget && (
+                <button
+                  onClick={() => setEditorMode('diff')}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
+                    editorMode === 'diff'
+                      ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
+                      : 'text-neutral-500 hover:text-neutral-800 dark:text-neutral-400 dark:hover:text-neutral-200'
+                  }`}
+                  title="Diff view"
+                >
+                  <GitCompare size={12} />
+                  Diff
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
+      <FindBar
+          getController={() => findControllerRef.current}
+          open={findOpen && document?.kind !== 'image'}
+          onClose={() => setFindOpen(false)}
+        />
       <div className="flex-1 overflow-hidden dark:bg-neutral-900 dark:text-white">
-        {editorMode === 'diff' ? (
+        {editorMode === 'diff' && document?.kind !== 'image' ? (
           <DiffViewer />
+        ) : document?.kind === 'image' ? (
+          <ImageViewer document={document} />
         ) : document ? (
           editorMode === 'edit' ? (
-            <MarkdownEditor key={document.ref.id} content={document.content} onChange={updateContent} />
+            <MarkdownEditor
+              key={document.ref.id}
+              content={document.content}
+              onChange={updateContent}
+              onFindController={registerFindController}
+            />
           ) : editorMode === 'preview' ? (
-            <MarkdownPreview content={document.content} baseRef={document.ref} />
+            <MarkdownPreview
+              content={document.content}
+              baseRef={document.ref}
+              onFindController={registerFindController}
+            />
           ) : (
             <SourceEditor
               key={document.ref.id}
               content={document.rawContent}
               onChange={updateRawContent}
               onActiveHeadingChange={onActiveHeadingChange}
+              onFindController={registerFindController}
             />
           )
         ) : (

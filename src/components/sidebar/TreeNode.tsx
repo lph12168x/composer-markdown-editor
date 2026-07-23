@@ -30,9 +30,15 @@ interface TreeNodeProps {
   root: WorkspaceRoot
   ref: FileRef
   depth?: number
+  /**
+   * ref.id of the document currently open in the editor pane. Any node
+   * (file or directory) whose id matches gets the "active" highlight.
+   * Defaults to `null` so callers don't need to thread the prop.
+   */
+  activeRefId?: string | null
 }
 
-export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
+export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeProps): JSX.Element {
   const { treeCache, expandedNodes, getChildren, refreshNode, setExpanded } = useFileTreeStore()
   const { document: currentDocument, closeDocument, updateRef } = useDocumentStore()
   const [isLoading, setIsLoading] = useState(false)
@@ -159,12 +165,18 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
     )
   }
 
+  const isActive = activeRefId != null && ref.id === activeRefId
+
   return (
     <li onContextMenu={handleContextMenu}>
       <button
         onClick={handleToggle}
         onDoubleClick={handleDoubleClick}
-        className="flex w-full items-center gap-1 px-2 py-1 text-sm text-neutral-800 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800"
+        className={`flex w-full items-center gap-1 px-2 py-1 text-sm ${
+          isActive
+            ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200'
+            : 'text-neutral-800 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800'
+        }`}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
       >
         {ref.isDirectory ? (
@@ -193,7 +205,13 @@ export function TreeNode({ root, ref, depth = 0 }: TreeNodeProps): JSX.Element {
       {ref.isDirectory && isExpanded && children && (
         <ul>
           {children.map((child) => (
-            <TreeNode key={child.id} root={root} ref={child} depth={depth + 1} />
+            <TreeNode
+              key={child.id}
+              root={root}
+              ref={child}
+              depth={depth + 1}
+              activeRefId={activeRefId}
+            />
           ))}
           {creating && (
             <li style={{ paddingLeft: `${8 + (depth + 1) * 12}px` }} className="px-2 py-1">

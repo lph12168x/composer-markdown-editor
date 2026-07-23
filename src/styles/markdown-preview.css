@@ -205,3 +205,28 @@
 .dark .markdown-preview th {
   background-color: #111827;
 }
+
+/* In-document find highlights. Yellow is the universal "selected text"
+   affordance; the active match gets a slightly darker shade and a ring
+   so it's obvious which one the Enter key will land on next. */
+.markdown-preview span.editor-find-match {
+  background-color: #fef08a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.markdown-preview span.editor-find-match.editor-find-active {
+  background-color: #facc15;
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.4);
+}
+
+.dark .markdown-preview span.editor-find-match {
+  background-color: rgba(250, 204, 21, 0.25);
+  color: inherit;
+}
+
+.dark .markdown-preview span.editor-find-match.editor-find-active {
+  background-color: rgba(250, 204, 21, 0.45);
+  box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.4);
+}

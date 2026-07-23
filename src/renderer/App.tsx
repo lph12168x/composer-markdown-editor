@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { useWorkspaceStore } from '../stores/workspaceStore'
-import { useDocumentStore } from '../stores/fileStore'
+import { useDocumentStore, isImageRef } from '../stores/fileStore'
 import { useSshStore } from '../stores/sshStore'
 import { useUiStore } from '../stores/uiStore'
 import { WorkspacePanel } from '../components/sidebar/WorkspacePanel'
@@ -31,7 +31,7 @@ function isUnderRoot(filePath: string, rootPath: string): boolean {
 
 function App(): JSX.Element {
   const { workspace, activeRootId, addLocalRoot, loadWorkspace, setActiveRoot } = useWorkspaceStore()
-  const { document: currentDocument, documents, openDocument } = useDocumentStore()
+  const { document: currentDocument, documents, openDocument, openImageDocument } = useDocumentStore()
   const handleAddLocalRoot = useCallback(
     (path: string) => {
       addLocalRoot(path)
@@ -83,9 +83,14 @@ function App(): JSX.Element {
       isDirectory: false
     }
 
-    const content = await fileSystemClient.readFile(ref)
-    openDocument(ref, content)
-  }, [addLocalRoot, openDocument, setActiveRoot])
+    if (isImageRef(ref)) {
+      const dataUrl = await fileSystemClient.readFileAsDataUrl(ref)
+      openImageDocument(ref, dataUrl)
+    } else {
+      const content = await fileSystemClient.readFile(ref)
+      openDocument(ref, content)
+    }
+  }, [addLocalRoot, openDocument, openImageDocument, setActiveRoot])
 
   const startLeftResize = useCallback((e: React.MouseEvent): void => {
     e.preventDefault()
@@ -187,11 +192,16 @@ function App(): JSX.Element {
 
   // Open files dispatched from the file tree.
   useEffect(() => {
-    const handleOpen = async (e: Event) => {
+    const handleOpen = async (e: Event): Promise<void> => {
       const ref = (e as CustomEvent).detail as FileRef
       try {
-        const content = await fileSystemClient.readFile(ref)
-        openDocument(ref, content)
+        if (isImageRef(ref)) {
+          const dataUrl = await fileSystemClient.readFileAsDataUrl(ref)
+          openImageDocument(ref, dataUrl)
+        } else {
+          const content = await fileSystemClient.readFile(ref)
+          openDocument(ref, content)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to open file'
         window.alert(message)
@@ -201,7 +211,7 @@ function App(): JSX.Element {
 
     window.addEventListener('file:open', handleOpen)
     return () => window.removeEventListener('file:open', handleOpen)
-  }, [openDocument])
+  }, [openDocument, openImageDocument])
 
   // Keyboard shortcuts: open folder, save (in EditorPane), settings.
   useEffect(() => {
@@ -285,14 +295,10 @@ function App(): JSX.Element {
         handleAddLocalRoot(payload)
       } else if (action === 'open-recent-file' && payload && typeof payload === 'object') {
         const file = payload as FileRef
-        void fileSystemClient
-          .readFile(file)
-          .then((content) => openDocument(file, content))
-          .catch((err) => {
-            const message = err instanceof Error ? err.message : 'Failed to open file'
-            window.alert(message)
-            console.error('Failed to open recent file:', err)
-          })
+        // Recent files can be either text or images; dispatch through the
+        // same CustomEvent path the file tree uses so we don't duplicate
+        // the kind-detection logic.
+        window.dispatchEvent(new CustomEvent('file:open', { detail: file }))
       } else if (action === 'open-recent-ssh' && payload && typeof payload === 'object') {
         window.dispatchEvent(new CustomEvent('ssh:menu-reconnect', { detail: payload }))
       } else if (action === 'toggle-left-panel') {

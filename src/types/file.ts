@@ -24,6 +24,11 @@ export interface FileRef {
 
 export interface Document {
   ref: FileRef
+  /**
+   * What kind of file this is. Markdown documents keep the legacy string
+   * `content`; image documents carry a base64 `dataUrl` and are read-only.
+   */
+  kind: 'markdown' | 'image'
   content: string
   rawContent: string
   originalContent: string

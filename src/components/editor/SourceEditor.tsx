@@ -6,6 +6,7 @@ import { tags } from '@lezer/highlight'
 import type { EditorProps } from '../../types/editor'
 import { parseMarkdownHeadings, type ParsedHeading } from '../../utils/markdownHeadings'
 import type { Heading } from './TocPanel'
+import type { FindController } from './FindBar'
 
 const markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.heading, color: '#2563eb', fontWeight: 'bold' },
@@ -22,6 +23,19 @@ const markdownHighlightStyle = HighlightStyle.define([
   { tag: tags.invalid, color: '#ef4304' }
 ])
 
+/**
+ * Sentinel controller handed back to the parent right before SourceEditor
+ * unmounts. The FindBar only ever calls the *latest* controller, so a
+ * harmless no-op keeps the FindBar from crashing if the user closes the
+ * bar after the editor has been swapped out.
+ */
+const NOOP_CONTROLLER: FindController = {
+  search: () => 0,
+  next: () => {},
+  prev: () => {},
+  close: () => {}
+}
+
 /** Extra prop on top of `EditorProps` so SourceEditor can report headings. */
 export interface SourceEditorProps extends EditorProps {
   /**
@@ -31,6 +45,13 @@ export interface SourceEditorProps extends EditorProps {
    * is not clobbered by SourceEditor's own scroll-driven report.
    */
   onActiveHeadingChange?: (heading: Heading | null) => void
+  /**
+   * Called once when the editor is mounted with a `FindController` backed
+   * by CodeMirror's `@codemirror/search` extension. The FindBar calls
+   * these methods to drive in-document search; the editor handles the
+   * highlight + scroll + count internally.
+   */
+  onFindController?: (controller: FindController) => void
 }
 
 /**
@@ -48,13 +69,18 @@ export interface SourceEditorProps extends EditorProps {
 export function SourceEditor({
   content,
   onChange,
-  onActiveHeadingChange
+  onActiveHeadingChange,
+  onFindController
 }: SourceEditorProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   const onActiveHeadingChangeRef = useRef(onActiveHeadingChange)
   const headingsRef = useRef<ParsedHeading[]>([])
+  // Find state for the in-editor FindBar. Lifted to the top of the
+  // component so the mount effect can write into them.
+  const currentQueryRef = useRef('')
+  const activeIndexRef = useRef(0)
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -71,6 +97,13 @@ export function SourceEditor({
   useEffect(() => {
     headingsRef.current = headings
   }, [headings])
+
+  // Holds the latest controller callback so the CM-create effect can fire
+  // it after the view is built (controllers must be backed by a real view).
+  const onFindControllerRef = useRef(onFindController)
+  useEffect(() => {
+    onFindControllerRef.current = onFindController
+  }, [onFindController])
 
   useEffect(() => {
     const container = containerRef.current
@@ -93,11 +126,133 @@ export function SourceEditor({
 
     viewRef.current = view
 
+    // FindController backed by a DOM walker over CodeMirror's `.cm-content`
+    // subtree. We intentionally don't lean on `@codemirror/search`'s panel
+    // because the user wants a unified FindBar across source / preview /
+    // edit. The walker unwraps prior <span class="cm-find-match"> nodes,
+    // wraps every case-insensitive match, and scrolls the active one
+    // into view. CodeMirror re-renders its content on every doc change,
+    // so the MutationObserver re-applies the active query automatically.
+    // Reuse the component-scoped refs declared at the top of the
+    // component — `currentQueryRef` / `activeIndexRef` are NOT hooks,
+    // they're plain refs that the controller writes to.
+    const applyFind = (query: string): number => {
+      const root = view.contentDOM
+      if (!root) return 0
+      const oldSpans = Array.from(root.querySelectorAll('span.cm-find-match'))
+      for (const span of oldSpans) {
+        const parent = span.parentNode
+        if (!parent) continue
+        while (span.firstChild) parent.insertBefore(span.firstChild, span)
+        parent.removeChild(span)
+        parent.normalize()
+      }
+      if (!query) return 0
+      const needle = query.toLowerCase()
+      if (!needle) return 0
+      const treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      const textNodes: Text[] = []
+      let n: Node | null = treeWalker.nextNode()
+      while (n) {
+        if (n instanceof Text && n.nodeValue && n.nodeValue.toLowerCase().includes(needle)) {
+          textNodes.push(n)
+        }
+        n = treeWalker.nextNode()
+      }
+      for (const text of textNodes) {
+        const original = text.nodeValue ?? ''
+        const haystack = original.toLowerCase()
+        const fragment = document.createDocumentFragment()
+        let pos = 0
+        let cursor = 0
+        while (cursor < haystack.length) {
+          const hit = haystack.indexOf(needle, cursor)
+          if (hit < 0) {
+            fragment.appendChild(document.createTextNode(original.slice(pos)))
+            break
+          }
+          if (hit > pos) fragment.appendChild(document.createTextNode(original.slice(pos, hit)))
+          const span = document.createElement('span')
+          span.className = 'cm-find-match'
+          span.textContent = original.slice(hit, hit + needle.length)
+          fragment.appendChild(span)
+          pos = hit + needle.length
+          cursor = pos
+        }
+        text.parentNode?.replaceChild(fragment, text)
+      }
+      const spans = Array.from(root.querySelectorAll('span.cm-find-match'))
+      if (spans.length === 0) return 0
+      const idx = ((activeIndexRef.current % spans.length) + spans.length) % spans.length
+      const active = spans[idx] as HTMLElement
+      active.classList.add('cm-find-active')
+      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return spans.length
+    }
+
+    const controller: FindController = {
+      search(query) {
+        currentQueryRef.current = query
+        activeIndexRef.current = 0
+        return applyFind(query)
+      },
+      next() {
+        if (!currentQueryRef.current) return
+        const root = view.contentDOM
+        if (!root) return
+        const total = root.querySelectorAll('span.cm-find-match').length
+        if (total === 0) return
+        root.querySelectorAll('span.cm-find-active').forEach((m) => {
+          m.classList.remove('cm-find-active')
+        })
+        activeIndexRef.current = (activeIndexRef.current + 1) % total
+        const idx = activeIndexRef.current
+        const active = root.querySelectorAll('span.cm-find-match')[idx] as HTMLElement | undefined
+        if (active) {
+          active.classList.add('cm-find-active')
+          active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      },
+      prev() {
+        if (!currentQueryRef.current) return
+        const root = view.contentDOM
+        if (!root) return
+        const total = root.querySelectorAll('span.cm-find-match').length
+        if (total === 0) return
+        root.querySelectorAll('span.cm-find-active').forEach((m) => {
+          m.classList.remove('cm-find-active')
+        })
+        activeIndexRef.current =
+          (activeIndexRef.current - 1 + total) % total
+        const idx = activeIndexRef.current
+        const active = root.querySelectorAll('span.cm-find-match')[idx] as HTMLElement | undefined
+        if (active) {
+          active.classList.add('cm-find-active')
+          active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      },
+      close() {
+        currentQueryRef.current = ''
+        activeIndexRef.current = 0
+        applyFind('')
+      }
+    }
+    onFindControllerRef.current?.(controller)
+
+    // CodeMirror re-renders line content as the user types; re-apply the
+    // active query so our <span> wrappers stay attached.
+    const mo = new MutationObserver(() => {
+      if (!currentQueryRef.current) return
+      applyFind(currentQueryRef.current)
+    })
+    mo.observe(view.contentDOM, { childList: true, subtree: true, characterData: true })
+
     return () => {
+      mo.disconnect()
+      onFindControllerRef.current?.(NOOP_CONTROLLER)
       view.destroy()
       viewRef.current = null
     }
-    // Editor is created once per mount; external content changes are handled below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -251,6 +406,25 @@ export function SourceEditor({
         }
         .dark .source-editor .cm-selectionBackground {
           background-color: #404040;
+        }
+        /* In-document find highlights — same palette as the preview mode
+           so the FindBar feels consistent across the three editors. */
+        .source-editor span.cm-find-match {
+          background-color: #fef08a;
+          color: inherit;
+          border-radius: 2px;
+          padding: 0 1px;
+        }
+        .source-editor span.cm-find-match.cm-find-active {
+          background-color: #facc15;
+          box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.4);
+        }
+        .dark .source-editor span.cm-find-match {
+          background-color: rgba(250, 204, 21, 0.25);
+        }
+        .dark .source-editor span.cm-find-match.cm-find-active {
+          background-color: rgba(250, 204, 21, 0.45);
+          box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.4);
         }
       `}</style>
       <div

@@ -6,10 +6,17 @@ import mermaid from 'mermaid'
 import type { FileRef } from '../../types/file'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import '../../styles/markdown-preview.css'
+import type { FindController } from './FindBar'
 
 interface MarkdownPreviewProps {
   content: string
   baseRef?: FileRef
+  /**
+   * Called once when the preview is ready with a `FindController` backed
+   * by a DOM walker that wraps matches in `<span class="editor-find-match">`.
+   * The FindBar calls these methods to drive in-document search.
+   */
+  onFindController?: (controller: FindController) => void
 }
 
 const md = markdownIt({
@@ -17,6 +24,62 @@ const md = markdownIt({
   linkify: true,
   typographer: true
 })
+
+/**
+ * GitHub-style slug for heading anchors. Keeps the existing in-document
+ * anchor stable (same input → same id), preserves CJK characters, and
+ * de-duplicates collisions by appending `-1`, `-2`, ... in document order.
+ */
+function slugify(text: string): string {
+  // Strip markdown syntax roughly so the rendered text becomes the anchor
+  // base. We don't try to be perfect — markdown-it doesn't expose the
+  // plain-text rendering of inline tokens here without a full pass.
+  const stripped = text
+    .toLowerCase()
+    .replace(/[`*_~]/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .replace(/\s+/g, '-')
+  return stripped || 'section'
+}
+
+const usedSlugs = new Set<string>()
+function uniqueSlug(text: string): string {
+  const base = slugify(text)
+  if (!usedSlugs.has(base)) {
+    usedSlugs.add(base)
+    return base
+  }
+  let n = 1
+  while (usedSlugs.has(`${base}-${n}`)) n += 1
+  const out = `${base}-${n}`
+  usedSlugs.add(out)
+  return out
+}
+
+// Override heading_open to emit a stable `id` on every <hN>. The matching
+// inline tokens follow and contain the heading text; we resolve the slug
+// from those. Token stream is walked forward from `idx` to find the next
+// `inline` token belonging to this heading.
+const defaultHeadingOpen = md.renderer.rules.heading_open
+  ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+  const openToken = tokens[idx]
+  const inlineToken = tokens[idx + 1]
+  const text = inlineToken && inlineToken.type === 'inline'
+    ? inlineToken.content
+    : ''
+  const id = uniqueSlug(text)
+  // Splice the id onto the opening tag so DOMPurify keeps it (id is in
+  // ADD_ATTR already).
+  openToken.attrJoin('id', id)
+  return defaultHeadingOpen(tokens, idx, options, env, self)
+}
+
+/** Reset slug collision tracker at the start of each render. */
+function resetHeadingSlugState(): void {
+  usedSlugs.clear()
+}
 
 const ADMONITION_TYPES = ['tip', 'warning', 'danger', 'info', 'details']
 
@@ -226,8 +289,18 @@ async function inlineRasterImages(container: HTMLElement, baseRef?: FileRef): Pr
   }
 }
 
-export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX.Element {
+export function MarkdownPreview({ content, baseRef, onFindController }: MarkdownPreviewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
+  // Latest find query — re-applied automatically after each re-render so
+  // search highlights survive content updates (e.g. mermaid swap-in).
+  const currentQueryRef = useRef('')
+  const activeIndexRef = useRef(0)
+  // Latest onFindController callback so the render effect can publish
+  // a fresh controller whenever the DOM is rebuilt.
+  const onFindControllerRef = useRef(onFindController)
+  useEffect(() => {
+    onFindControllerRef.current = onFindController
+  }, [onFindController])
 
   useEffect(() => {
     const container = containerRef.current
@@ -236,6 +309,9 @@ export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX
     let cancelled = false
 
     const render = async (): Promise<void> => {
+      // Slug uniqueness is per-render; reset before each pass so the same
+      // document re-rendered with the same content gets the same ids.
+      resetHeadingSlugState()
       const rawHtml = md.render(content)
       const temp = document.createElement('div')
       temp.innerHTML = rawHtml
@@ -253,6 +329,159 @@ export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX
       if (cancelled) return
 
       container.innerHTML = sanitized
+
+      // After a fresh render, re-publish the FindController so it captures
+      // the new container, and re-apply the active query so highlights
+      // persist across re-renders (e.g. mermaid swap-in).
+      publishFindController()
+      if (currentQueryRef.current) {
+        applyFind(currentQueryRef.current)
+      }
+    }
+
+    /**
+     * Walk all text nodes inside the container, wrap every case-insensitive
+     * occurrence of `query` in a `<span class="editor-find-match">`, and
+     * mark the active match with an additional `editor-find-active` class.
+     * Unwraps any previously inserted marks first so consecutive searches
+     * don't nest.
+     */
+    const applyFind = (query: string): number => {
+      const containerEl = containerRef.current
+      if (!containerEl || !query) return 0
+
+      // 1) Unwrap previous marks in document order so we don't accumulate
+      //    nested <span> elements across searches.
+      const oldMarks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
+      for (const mark of oldMarks) {
+        const parent = mark.parentNode
+        if (!parent) continue
+        while (mark.firstChild) {
+          parent.insertBefore(mark.firstChild, mark)
+        }
+        parent.removeChild(mark)
+        parent.normalize()
+      }
+
+      // 2) Walk text nodes and wrap matches. We can't simply do
+      //    `container.innerHTML.replace(...)` because that would re-parse
+      //    the DOM and clobber any pending mermaid/svg nodes that finished
+      //    rendering after our initial innerHTML assignment.
+      const needle = query.toLowerCase()
+      if (!needle) return 0
+
+      const treeWalker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT)
+      const textNodes: Text[] = []
+      let node: Node | null = treeWalker.nextNode()
+      while (node) {
+        if (node instanceof Text && node.nodeValue && node.nodeValue.toLowerCase().includes(needle)) {
+          textNodes.push(node)
+        }
+        node = treeWalker.nextNode()
+      }
+
+      for (const text of textNodes) {
+        const original = text.nodeValue ?? ''
+        const haystack = original.toLowerCase()
+        let cursor = 0
+        let firstHitAt: number | null = null
+        while (cursor < haystack.length) {
+          const hit = haystack.indexOf(needle, cursor)
+          if (hit < 0) break
+          if (firstHitAt === null) firstHitAt = hit
+          cursor = hit + Math.max(1, needle.length)
+        }
+        if (firstHitAt === null) continue
+
+        // Build replacement nodes: a sequence of text nodes interleaved
+        // with <mark> wrappers. Done in one pass to keep DOM mutation cheap.
+        const fragment = document.createDocumentFragment()
+        let pos = 0
+        cursor = 0
+        while (cursor < haystack.length) {
+          const hit = haystack.indexOf(needle, cursor)
+          if (hit < 0) {
+            fragment.appendChild(document.createTextNode(original.slice(pos)))
+            break
+          }
+          if (hit > pos) fragment.appendChild(document.createTextNode(original.slice(pos, hit)))
+          const mark = document.createElement('span')
+          mark.className = 'editor-find-match'
+          mark.textContent = original.slice(hit, hit + needle.length)
+          fragment.appendChild(mark)
+          pos = hit + needle.length
+          cursor = pos
+        }
+        text.parentNode?.replaceChild(fragment, text)
+      }
+
+      // 3) Highlight the active match (if any) and scroll it into view.
+      const marks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
+      if (marks.length === 0) return 0
+      const idx = ((activeIndexRef.current % marks.length) + marks.length) % marks.length
+      const active = marks[idx] as HTMLElement
+      active.classList.add('editor-find-active')
+      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return marks.length
+    }
+
+    /**
+     * Move the active-match indicator without rebuilding marks. Cheap path
+     * for `next`/`prev` once the highlights already exist.
+     */
+    const setActive = (total: number): void => {
+      const containerEl = containerRef.current
+      if (!containerEl || total === 0) return
+      const marks = containerEl.querySelectorAll('span.editor-find-match')
+      const idx = ((activeIndexRef.current % total) + total) % total
+      const active = marks[idx] as HTMLElement | undefined
+      if (!active) return
+      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      active.classList.add('editor-find-active')
+    }
+
+    const publishFindController = (): void => {
+      const callback = onFindControllerRef.current
+      if (!callback) return
+      const controller: FindController = {
+        search(query) {
+          currentQueryRef.current = query
+          activeIndexRef.current = 0
+          return applyFind(query)
+        },
+        next() {
+          if (!currentQueryRef.current) return
+          const containerEl = containerRef.current
+          if (!containerEl) return
+          const total = containerEl.querySelectorAll('span.editor-find-match').length
+          if (total === 0) return
+          // Drop the previous-active class, advance the cursor, highlight.
+          containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
+            m.classList.remove('editor-find-active')
+          })
+          activeIndexRef.current = (activeIndexRef.current + 1) % total
+          setActive(total)
+        },
+        prev() {
+          if (!currentQueryRef.current) return
+          const containerEl = containerRef.current
+          if (!containerEl) return
+          const total = containerEl.querySelectorAll('span.editor-find-match').length
+          if (total === 0) return
+          containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
+            m.classList.remove('editor-find-active')
+          })
+          activeIndexRef.current =
+            (activeIndexRef.current - 1 + total) % total
+          setActive(total)
+        },
+        close() {
+          currentQueryRef.current = ''
+          activeIndexRef.current = 0
+          applyFind('')
+        }
+      }
+      callback(controller)
     }
 
     void render()
@@ -261,6 +490,56 @@ export function MarkdownPreview({ content, baseRef }: MarkdownPreviewProps): JSX
       cancelled = true
     }
   }, [content, baseRef])
+
+  /**
+   * In-page anchor clicks: markdown renders `[text](#some-id)` as
+   * `<a href="#some-id">…</a>`. Without interception the browser jumps
+   * abruptly to the anchor and may leave the page scrolled above the
+   * editor's own scroll container. We intercept hash links and scroll the
+   * editor itself smoothly to the matching heading element.
+   *
+   * Using event delegation on the container so we don't need to re-bind
+   * after every re-render.
+   */
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleClick = (event: MouseEvent): void => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const anchor = target.closest('a')
+      if (!(anchor instanceof HTMLAnchorElement)) return
+
+      const href = anchor.getAttribute('href') ?? ''
+      // Only intercept in-page hash links; leave external links to the
+      // browser (we may add an open-in-new-tab affordance later).
+      if (!href.startsWith('#') || href.length < 2) return
+
+      const id = decodeURIComponent(href.slice(1))
+      const heading = container.querySelector(`#${CSS.escape(id)}`)
+      if (!(heading instanceof HTMLElement)) return
+
+      event.preventDefault()
+      // Offset 16px mirrors `App.handleHeadingClick` for the right-side
+      // outline, so the two entry points land the heading at the same
+      // visual position.
+      const containerRect = container.getBoundingClientRect()
+      const targetTop = heading.getBoundingClientRect().top - containerRect.top
+      const scrollTop = container.scrollTop + targetTop - 16
+      container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
+      // Update the URL hash so the location bar reflects the destination —
+      // useful for "copy link" workflows and back-button navigation.
+      try {
+        window.history.replaceState(null, '', `#${id}`)
+      } catch {
+        // replaceState can throw on file:// in some Electron versions; safe to ignore.
+      }
+    }
+
+    container.addEventListener('click', handleClick)
+    return () => container.removeEventListener('click', handleClick)
+  }, [])
 
   return (
     <div

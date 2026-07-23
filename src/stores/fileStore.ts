@@ -89,6 +89,7 @@ interface DocumentState {
   activeDocumentId: string | null
   document: Document | null
   openDocument: (ref: FileRef, content: string) => void
+  openImageDocument: (ref: FileRef, dataUrl: string) => void
   activateDocument: (id: string) => void
   updateContent: (content: string) => void
   updateRawContent: (rawContent: string) => void
@@ -98,12 +99,51 @@ interface DocumentState {
   updateRef: (ref: FileRef) => void
 }
 
+/**
+ * Image extensions that the file tree recognizes as image documents.
+ * Kept in sync with the MIME map inside `LocalFileSystemProvider.readFileAsDataUrl`.
+ */
+export const IMAGE_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.svg',
+  '.bmp'
+])
+
+export function isImageRef(ref: FileRef): boolean {
+  // ref.name carries the basename; ref.path is also fine and survives rename.
+  const dot = ref.name.lastIndexOf('.')
+  if (dot < 0) return false
+  return IMAGE_EXTENSIONS.has(ref.name.slice(dot).toLowerCase())
+}
+
 function createDocument(ref: FileRef, content: string): Document {
   return {
     ref,
+    kind: 'markdown',
     content,
     rawContent: content,
     originalContent: content,
+    modified: false,
+    loading: false,
+    lastModifiedEditor: null,
+    hasNormalized: false
+  }
+}
+
+function createImageDocument(ref: FileRef, dataUrl: string): Document {
+  return {
+    ref,
+    kind: 'image',
+    // For image docs `content` doubles as the data URL — renderers and the
+    // Tab title only ever read `ref.name`, so it's safe to overload the
+    // field rather than add a sibling `dataUrl?: string`.
+    content: dataUrl,
+    rawContent: dataUrl,
+    originalContent: dataUrl,
     modified: false,
     loading: false,
     lastModifiedEditor: null,
@@ -150,6 +190,43 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         }
       } else {
         nextDocuments = [...state.documents, createDocument(ref, content)]
+      }
+      reportModified(nextDocuments)
+      return {
+        documents: nextDocuments,
+        activeDocumentId: ref.id,
+        document: findActiveDocument(nextDocuments, ref.id)
+      }
+    })
+
+    void settingsClient.addRecentFile({
+      id: ref.id,
+      rootId: ref.rootId,
+      type: ref.type,
+      path: ref.path,
+      name: ref.name
+    })
+  },
+
+  openImageDocument: (ref: FileRef, dataUrl: string) => {
+    set((state) => {
+      const existingIndex = state.documents.findIndex((doc) => doc.ref.id === ref.id)
+      let nextDocuments: Document[]
+      if (existingIndex >= 0) {
+        // Reopening the same image just refreshes the bytes — kind is
+        // already set and won't change on the same ref.
+        nextDocuments = [...state.documents]
+        nextDocuments[existingIndex] = {
+          ...nextDocuments[existingIndex],
+          kind: 'image',
+          content: dataUrl,
+          rawContent: dataUrl,
+          originalContent: dataUrl,
+          modified: false,
+          lastModifiedEditor: null
+        }
+      } else {
+        nextDocuments = [...state.documents, createImageDocument(ref, dataUrl)]
       }
       reportModified(nextDocuments)
       return {
