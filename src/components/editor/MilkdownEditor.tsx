@@ -36,6 +36,12 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
   // `activeIndex` to 0 and subsequent Enter presses always land on the
   // first match.
   const scrollGuardUntilRef = useRef(0)
+  // Re-entrancy guard. applyFind mutates the DOM (replaceChild +
+  // scrollIntoView) and a synchronous re-entry from a fired
+  // MutationObserver would form a tight loop that freezes the renderer.
+  // The guard short-circuits any re-entry while we are still unwinding;
+  // it is reset in applyFind's finally block.
+  const applyingRef = useRef(false)
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
 
   useEffect(() => {
@@ -63,6 +69,10 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
   const applyFind = (query: string): number => {
     const containerEl = containerRef.current
     if (!containerEl) return 0
+    // Re-entrancy guard: see the comment on `applyingRef` above.
+    if (applyingRef.current) return 0
+    applyingRef.current = true
+    try {
 
     // 1) Unwrap previous marks.
     const oldMarks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
@@ -134,6 +144,9 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
     active.classList.add('editor-find-active')
     active.scrollIntoView({ behavior: 'smooth', block: 'center' })
     return marks.length
+    } finally {
+      applyingRef.current = false
+    }
   }
 
   useEffect(() => {
@@ -228,9 +241,13 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
       // `scrollGuardUntilRef` below; we honor it here.
       mo = new MutationObserver(() => {
         if (!currentQueryRef.current) return
+        if (applyingRef.current) return
         if (Date.now() < scrollGuardUntilRef.current) return
         if (debounceTimer) clearTimeout(debounceTimer)
         debounceTimer = setTimeout(() => {
+          debounceTimer = null
+          if (!currentQueryRef.current) return
+          if (applyingRef.current) return
           applyFind(currentQueryRef.current)
         }, 50)
       })

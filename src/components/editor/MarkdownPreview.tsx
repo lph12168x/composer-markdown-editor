@@ -295,6 +295,14 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
   // search highlights survive content updates (e.g. mermaid swap-in).
   const currentQueryRef = useRef('')
   const activeIndexRef = useRef(0)
+  // Re-entrancy guard. applyFind mutates the DOM (replaceChild +
+  // scrollIntoView) which can re-trigger the render effect's applyFind
+  // call (line 337). The guard short-circuits any re-entry while a
+  // previous applyFind is still on the stack, eliminating the
+  // synchronous re-entry loop. The render-effect call site is also
+  // guarded by this flag, so a re-render during an in-flight applyFind
+  // will skip the re-apply rather than queue a second one.
+  const applyingRef = useRef(false)
   // Latest onFindController callback so the render effect can publish
   // a fresh controller whenever the DOM is rebuilt.
   const onFindControllerRef = useRef(onFindController)
@@ -334,7 +342,7 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
       // the new container, and re-apply the active query so highlights
       // persist across re-renders (e.g. mermaid swap-in).
       publishFindController()
-      if (currentQueryRef.current) {
+      if (currentQueryRef.current && !applyingRef.current) {
         applyFind(currentQueryRef.current)
       }
     }
@@ -349,6 +357,9 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
     const applyFind = (query: string): number => {
       const containerEl = containerRef.current
       if (!containerEl || !query) return 0
+      // Re-entrancy guard: see the comment on `applyingRef` above.
+      if (applyingRef.current) return 0
+      applyingRef.current = true
 
       // 1) Unwrap previous marks in document order so we don't accumulate
       //    nested <span> elements across searches.
@@ -422,6 +433,7 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
       const active = marks[idx] as HTMLElement
       active.classList.add('editor-find-active')
       active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      applyingRef.current = false
       return marks.length
     }
 

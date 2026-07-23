@@ -136,9 +136,20 @@ export function SourceEditor({
     // Reuse the component-scoped refs declared at the top of the
     // component — `currentQueryRef` / `activeIndexRef` are NOT hooks,
     // they're plain refs that the controller writes to.
+    // Re-entrancy guard. `applyFind` mutates the DOM (replaceChild + scrollIntoView),
+    // which synchronously fires MutationObserver records. Without this guard the
+    // MO callback would re-enter applyFind, which would mutate the DOM again,
+    // re-firing MO — a tight synchronous loop that locks up the renderer. With
+    // the guard set during our own mutation passes, the MO callback sees the
+    // flag and bails out instead of triggering another applyFind.
+    let applying = false
+
     const applyFind = (query: string): number => {
       const root = view.contentDOM
       if (!root) return 0
+      if (applying) return 0
+      applying = true
+      try {
       const oldSpans = Array.from(root.querySelectorAll('span.cm-find-match'))
       for (const span of oldSpans) {
         const parent = span.parentNode
@@ -188,6 +199,9 @@ export function SourceEditor({
       active.classList.add('cm-find-active')
       active.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return spans.length
+      } finally {
+        applying = false
+      }
     }
 
     const controller: FindController = {
@@ -241,13 +255,34 @@ export function SourceEditor({
 
     // CodeMirror re-renders line content as the user types; re-apply the
     // active query so our <span> wrappers stay attached.
+    //
+    // The MO callback is dispatched on a microtask boundary (queueMicrotask),
+    // NOT synchronously: applyFind's own DOM mutations fire MO records that
+    // would, if handled in the same task, re-enter applyFind and form an
+    // infinite loop that freezes the renderer. Async dispatch breaks that
+    // loop and lets the current applyFind fully unwind before the next one
+    // starts. The `applying` flag is a second-line defence for the brief
+    // window where a sync DOM mutation from outside our code (e.g. a
+    // controlled-input onChange) lands before the previous applyFind's
+    // finally has cleared.
+    let moRaf: number | null = null
     const mo = new MutationObserver(() => {
       if (!currentQueryRef.current) return
-      applyFind(currentQueryRef.current)
+      if (applying) return
+      if (moRaf !== null) return
+      moRaf = window.setTimeout(() => {
+        moRaf = null
+        if (!currentQueryRef.current || applying) return
+        applyFind(currentQueryRef.current)
+      }, 0)
     })
     mo.observe(view.contentDOM, { childList: true, subtree: true, characterData: true })
 
     return () => {
+      if (moRaf !== null) {
+        clearTimeout(moRaf)
+        moRaf = null
+      }
       mo.disconnect()
       onFindControllerRef.current?.(NOOP_CONTROLLER)
       view.destroy()
