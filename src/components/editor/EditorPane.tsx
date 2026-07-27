@@ -48,16 +48,16 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   const registerFindController = useCallback((c: FindController | null) => {
     findControllerRef.current = c
   }, [])
-  // Make sure we close the bar when the user switches tabs/modes so the
+  // Close the find bar when the user switches tabs/modes so the
   // stale controller from a now-unmounted editor doesn't fire.
+  // We intentionally do NOT null out findControllerRef here: React runs
+  // parent effects AFTER child mount effects, so nulling here would
+  // clobber the controller the just-mounted editor already published.
+  // The old editor's cleanup effect replaces the ref with NOOP_CONTROLLER,
+  // and the new editor's mount effect sets it to the real controller.
   useEffect(() => {
-    // `activeDocumentId` and `editorMode` are already in the dep list,
-    // so this is a legitimate "reset on dependency change" — not a
-    // cascading render. The cascade warning doesn't apply.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFindOpen(false)
-    registerFindController(null)
-  }, [activeDocumentId, editorMode, registerFindController])
+  }, [activeDocumentId, editorMode])
 
   const handleSave = useCallback(async () => {
     if (!document || !document.modified) return

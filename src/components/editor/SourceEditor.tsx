@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { EditorView, basicSetup } from 'codemirror'
+import { keymap, Decoration } from '@codemirror/view'
+import { Prec, StateEffect, StateField, RangeSet } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
@@ -31,10 +33,101 @@ const markdownHighlightStyle = HighlightStyle.define([
  */
 const NOOP_CONTROLLER: FindController = {
   search: () => 0,
-  next: () => {},
-  prev: () => {},
+  next: () => 0,
+  prev: () => 0,
   close: () => {}
 }
+
+// --- Find via CodeMirror Decoration API ---
+// Previously we manually wrapped text nodes in <span class="cm-find-match">,
+// but CM's internal re-decoration cycle strips those custom DOM nodes,
+// causing the highlights to flicker or vanish entirely.  Using StateField +
+// Decoration.mark integrates with CM's own rendering pipeline so the
+// decorations survive every re-render.
+
+const setFindQuery = StateEffect.define<{ query: string; activeIndex: number }>()
+
+const matchDeco = Decoration.mark({ class: 'cm-find-match' })
+const activeDeco = Decoration.mark({ class: 'cm-find-match cm-find-active' })
+
+/** Scan the document text and build a RangeSet of match/active decorations. */
+function buildFindDecorations(
+  doc: string,
+  query: string,
+  activeIndex: number
+): RangeSet<Decoration> {
+  if (!query) return RangeSet.empty
+  const needle = query.toLowerCase()
+  if (!needle) return RangeSet.empty
+  const lower = doc.toLowerCase()
+  const decos: ReturnType<typeof matchDeco.range>[] = []
+  let pos = 0
+  let matchIdx = 0
+  for (;;) {
+    const idx = lower.indexOf(needle, pos)
+    if (idx < 0) break
+    if (matchIdx === activeIndex) {
+      decos.push(activeDeco.range(idx, idx + needle.length))
+    } else {
+      decos.push(matchDeco.range(idx, idx + needle.length))
+    }
+    pos = idx + needle.length
+    matchIdx++
+  }
+  return RangeSet.of(decos, true)
+}
+
+/** Count case-insensitive occurrences of `needle` in `doc`. */
+function countMatches(doc: string, needle: string): number {
+  if (!needle) return 0
+  const lower = doc.toLowerCase()
+  const n = needle.toLowerCase()
+  let count = 0
+  let pos = 0
+  for (;;) {
+    const idx = lower.indexOf(n, pos)
+    if (idx < 0) break
+    count++
+    pos = idx + n.length
+  }
+  return count
+}
+
+/** Return the document offset of the `activeIndex`-th match (0-indexed). */
+function matchOffset(doc: string, needle: string, activeIndex: number): number {
+  const lower = doc.toLowerCase()
+  const n = needle.toLowerCase()
+  let pos = 0
+  let matchIdx = 0
+  for (;;) {
+    const idx = lower.indexOf(n, pos)
+    if (idx < 0) return -1
+    if (matchIdx === activeIndex) return idx
+    pos = idx + n.length
+    matchIdx++
+  }
+}
+
+const findField = StateField.define<RangeSet<Decoration>>({
+  create() {
+    return RangeSet.empty
+  },
+  update(value, tr) {
+    value = value.map(tr.changes)
+    for (const effect of tr.effects) {
+      if (effect.is(setFindQuery)) {
+        const { query, activeIndex } = effect.value
+        return buildFindDecorations(
+          tr.state.doc.toString(),
+          query,
+          activeIndex
+        )
+      }
+    }
+    return value
+  },
+  provide: (f) => EditorView.decorations.from(f)
+})
 
 /** Extra prop on top of `EditorProps` so SourceEditor can report headings. */
 export interface SourceEditorProps extends EditorProps {
@@ -81,6 +174,7 @@ export function SourceEditor({
   // component so the mount effect can write into them.
   const currentQueryRef = useRef('')
   const activeIndexRef = useRef(0)
+  const matchCountRef = useRef(0)
 
   useEffect(() => {
     onChangeRef.current = onChange
@@ -113,11 +207,38 @@ export function SourceEditor({
       doc: content,
       extensions: [
         basicSetup,
+        // Prevent CodeMirror's built-in search panel (from basicSetup's
+        // searchKeymap) from opening on Cmd+F — our FindBar handles it.
+        // Returning true marks the key as handled so CM's searchKeymap
+        // is skipped, but the DOM event still bubbles to window where
+        // EditorPane's handler opens the unified FindBar.
+        Prec.highest(
+          keymap.of([
+            { key: 'Mod-f', run: () => true },
+            { key: 'Mod-F', run: () => true }
+          ])
+        ),
         markdown(),
         syntaxHighlighting(markdownHighlightStyle),
+        findField,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChangeRef.current(view.state.doc.toString())
+            // Re-scan for matches if a search is active — findField's
+            // update only *maps* existing decorations to new positions,
+            // it doesn't re-scan for new/deleted matches from edits.
+            if (currentQueryRef.current) {
+              const doc = view.state.doc.toString()
+              const count = countMatches(doc, currentQueryRef.current)
+              matchCountRef.current = count
+              if (activeIndexRef.current >= count) activeIndexRef.current = 0
+              view.dispatch({
+                effects: setFindQuery.of({
+                  query: currentQueryRef.current,
+                  activeIndex: activeIndexRef.current
+                })
+              })
+            }
           }
         })
       ],
@@ -126,164 +247,77 @@ export function SourceEditor({
 
     viewRef.current = view
 
-    // FindController backed by a DOM walker over CodeMirror's `.cm-content`
-    // subtree. We intentionally don't lean on `@codemirror/search`'s panel
-    // because the user wants a unified FindBar across source / preview /
-    // edit. The walker unwraps prior <span class="cm-find-match"> nodes,
-    // wraps every case-insensitive match, and scrolls the active one
-    // into view. CodeMirror re-renders its content on every doc change,
-    // so the MutationObserver re-applies the active query automatically.
-    // Reuse the component-scoped refs declared at the top of the
-    // component — `currentQueryRef` / `activeIndexRef` are NOT hooks,
-    // they're plain refs that the controller writes to.
-    // Re-entrancy guard. `applyFind` mutates the DOM (replaceChild + scrollIntoView),
-    // which synchronously fires MutationObserver records. Without this guard the
-    // MO callback would re-enter applyFind, which would mutate the DOM again,
-    // re-firing MO — a tight synchronous loop that locks up the renderer. With
-    // the guard set during our own mutation passes, the MO callback sees the
-    // flag and bails out instead of triggering another applyFind.
-    let applying = false
-
-    const applyFind = (query: string): number => {
-      const root = view.contentDOM
-      if (!root) return 0
-      if (applying) return 0
-      applying = true
-      try {
-      const oldSpans = Array.from(root.querySelectorAll('span.cm-find-match'))
-      for (const span of oldSpans) {
-        const parent = span.parentNode
-        if (!parent) continue
-        while (span.firstChild) parent.insertBefore(span.firstChild, span)
-        parent.removeChild(span)
-        parent.normalize()
-      }
-      if (!query) return 0
-      const needle = query.toLowerCase()
-      if (!needle) return 0
-      const treeWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      const textNodes: Text[] = []
-      let n: Node | null = treeWalker.nextNode()
-      while (n) {
-        if (n instanceof Text && n.nodeValue && n.nodeValue.toLowerCase().includes(needle)) {
-          textNodes.push(n)
-        }
-        n = treeWalker.nextNode()
-      }
-      for (const text of textNodes) {
-        const original = text.nodeValue ?? ''
-        const haystack = original.toLowerCase()
-        const fragment = document.createDocumentFragment()
-        let pos = 0
-        let cursor = 0
-        while (cursor < haystack.length) {
-          const hit = haystack.indexOf(needle, cursor)
-          if (hit < 0) {
-            fragment.appendChild(document.createTextNode(original.slice(pos)))
-            break
-          }
-          if (hit > pos) fragment.appendChild(document.createTextNode(original.slice(pos, hit)))
-          const span = document.createElement('span')
-          span.className = 'cm-find-match'
-          span.textContent = original.slice(hit, hit + needle.length)
-          fragment.appendChild(span)
-          pos = hit + needle.length
-          cursor = pos
-        }
-        text.parentNode?.replaceChild(fragment, text)
-      }
-      const spans = Array.from(root.querySelectorAll('span.cm-find-match'))
-      if (spans.length === 0) return 0
-      const idx = ((activeIndexRef.current % spans.length) + spans.length) % spans.length
-      const active = spans[idx] as HTMLElement
-      active.classList.add('cm-find-active')
-      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return spans.length
-      } finally {
-        applying = false
-      }
-    }
-
+    // FindController backed by CodeMirror's Decoration API. Dispatches
+    // `setFindQuery` effects into the `findField` StateField, which builds
+    // a RangeSet of match/active decorations that integrate with CM's
+    // own rendering pipeline — highlights survive CM's internal re-decoration
+    // cycle (unlike manual <span> insertion which was stripped on re-render).
     const controller: FindController = {
       search(query) {
         currentQueryRef.current = query
         activeIndexRef.current = 0
-        return applyFind(query)
+        const doc = view.state.doc.toString()
+        const count = countMatches(doc, query)
+        matchCountRef.current = count
+        view.dispatch({ effects: setFindQuery.of({ query, activeIndex: 0 }) })
+        if (count > 0) {
+          const pos = matchOffset(doc, query, 0)
+          view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
+        }
+        return count
       },
       next() {
-        if (!currentQueryRef.current) return
-        const root = view.contentDOM
-        if (!root) return
-        const total = root.querySelectorAll('span.cm-find-match').length
-        if (total === 0) return
-        root.querySelectorAll('span.cm-find-active').forEach((m) => {
-          m.classList.remove('cm-find-active')
-        })
+        if (!currentQueryRef.current) return 0
+        const total = matchCountRef.current
+        if (total === 0) return 0
         activeIndexRef.current = (activeIndexRef.current + 1) % total
-        const idx = activeIndexRef.current
-        const active = root.querySelectorAll('span.cm-find-match')[idx] as HTMLElement | undefined
-        if (active) {
-          active.classList.add('cm-find-active')
-          active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        view.dispatch({
+          effects: setFindQuery.of({
+            query: currentQueryRef.current,
+            activeIndex: activeIndexRef.current
+          })
+        })
+        const pos = matchOffset(
+          view.state.doc.toString(),
+          currentQueryRef.current,
+          activeIndexRef.current
+        )
+        if (pos >= 0) {
+          view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
         }
+        return activeIndexRef.current + 1
       },
       prev() {
-        if (!currentQueryRef.current) return
-        const root = view.contentDOM
-        if (!root) return
-        const total = root.querySelectorAll('span.cm-find-match').length
-        if (total === 0) return
-        root.querySelectorAll('span.cm-find-active').forEach((m) => {
-          m.classList.remove('cm-find-active')
+        if (!currentQueryRef.current) return 0
+        const total = matchCountRef.current
+        if (total === 0) return 0
+        activeIndexRef.current = (activeIndexRef.current - 1 + total) % total
+        view.dispatch({
+          effects: setFindQuery.of({
+            query: currentQueryRef.current,
+            activeIndex: activeIndexRef.current
+          })
         })
-        activeIndexRef.current =
-          (activeIndexRef.current - 1 + total) % total
-        const idx = activeIndexRef.current
-        const active = root.querySelectorAll('span.cm-find-match')[idx] as HTMLElement | undefined
-        if (active) {
-          active.classList.add('cm-find-active')
-          active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        const pos = matchOffset(
+          view.state.doc.toString(),
+          currentQueryRef.current,
+          activeIndexRef.current
+        )
+        if (pos >= 0) {
+          view.dispatch({ effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
         }
+        return activeIndexRef.current + 1
       },
       close() {
         currentQueryRef.current = ''
         activeIndexRef.current = 0
-        applyFind('')
+        matchCountRef.current = 0
+        view.dispatch({ effects: setFindQuery.of({ query: '', activeIndex: 0 }) })
       }
     }
     onFindControllerRef.current?.(controller)
 
-    // CodeMirror re-renders line content as the user types; re-apply the
-    // active query so our <span> wrappers stay attached.
-    //
-    // The MO callback is dispatched on a microtask boundary (queueMicrotask),
-    // NOT synchronously: applyFind's own DOM mutations fire MO records that
-    // would, if handled in the same task, re-enter applyFind and form an
-    // infinite loop that freezes the renderer. Async dispatch breaks that
-    // loop and lets the current applyFind fully unwind before the next one
-    // starts. The `applying` flag is a second-line defence for the brief
-    // window where a sync DOM mutation from outside our code (e.g. a
-    // controlled-input onChange) lands before the previous applyFind's
-    // finally has cleared.
-    let moRaf: number | null = null
-    const mo = new MutationObserver(() => {
-      if (!currentQueryRef.current) return
-      if (applying) return
-      if (moRaf !== null) return
-      moRaf = window.setTimeout(() => {
-        moRaf = null
-        if (!currentQueryRef.current || applying) return
-        applyFind(currentQueryRef.current)
-      }, 0)
-    })
-    mo.observe(view.contentDOM, { childList: true, subtree: true, characterData: true })
-
     return () => {
-      if (moRaf !== null) {
-        clearTimeout(moRaf)
-        moRaf = null
-      }
-      mo.disconnect()
       onFindControllerRef.current?.(NOOP_CONTROLLER)
       view.destroy()
       viewRef.current = null

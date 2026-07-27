@@ -348,6 +348,26 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
     }
 
     /**
+     * Scroll the given match element to the vertical center of the preview
+     * container. `Element.scrollIntoView({ block: 'center' })` also scrolls
+     * ancestor scroll containers (the window, layout panels), which in this
+     * Electron app produces no visible movement in the intended container
+     * or jumps the whole page. Scrolling the container directly with a
+     * computed offset is reliable and mirrors the anchor-click handler.
+     * `behavior: 'smooth'` is silently ignored by the Chromium version
+     * bundled with Electron, so we use `'auto'` for an instant jump.
+     */
+    const scrollMatchIntoView = (el: HTMLElement): void => {
+      const containerEl = containerRef.current
+      if (!containerEl) return
+      const containerRect = containerEl.getBoundingClientRect()
+      const matchTop = el.getBoundingClientRect().top - containerRect.top
+      const target = containerEl.scrollTop + matchTop - containerEl.clientHeight / 2
+      const maxScroll = Math.max(0, containerEl.scrollHeight - containerEl.clientHeight)
+      containerEl.scrollTo({ top: Math.max(0, Math.min(target, maxScroll)), behavior: 'auto' })
+    }
+
+    /**
      * Walk all text nodes inside the container, wrap every case-insensitive
      * occurrence of `query` in a `<span class="editor-find-match">`, and
      * mark the active match with an additional `editor-find-active` class.
@@ -356,13 +376,16 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
      */
     const applyFind = (query: string): number => {
       const containerEl = containerRef.current
-      if (!containerEl || !query) return 0
+      if (!containerEl) return 0
       // Re-entrancy guard: see the comment on `applyingRef` above.
       if (applyingRef.current) return 0
       applyingRef.current = true
+      try {
 
       // 1) Unwrap previous marks in document order so we don't accumulate
-      //    nested <span> elements across searches.
+      //    nested <span> elements across searches. Done before the empty-
+      //    query early return so `close()` → `applyFind('')` clears
+      //    existing highlights instead of leaving them on screen.
       const oldMarks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
       for (const mark of oldMarks) {
         const parent = mark.parentNode
@@ -374,6 +397,7 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
         parent.normalize()
       }
 
+      if (!query) return 0
       // 2) Walk text nodes and wrap matches. We can't simply do
       //    `container.innerHTML.replace(...)` because that would re-parse
       //    the DOM and clobber any pending mermaid/svg nodes that finished
@@ -432,9 +456,11 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
       const idx = ((activeIndexRef.current % marks.length) + marks.length) % marks.length
       const active = marks[idx] as HTMLElement
       active.classList.add('editor-find-active')
-      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      applyingRef.current = false
+      scrollMatchIntoView(active)
       return marks.length
+      } finally {
+        applyingRef.current = false
+      }
     }
 
     /**
@@ -448,7 +474,7 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
       const idx = ((activeIndexRef.current % total) + total) % total
       const active = marks[idx] as HTMLElement | undefined
       if (!active) return
-      active.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      scrollMatchIntoView(active)
       active.classList.add('editor-find-active')
     }
 
@@ -462,30 +488,32 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
           return applyFind(query)
         },
         next() {
-          if (!currentQueryRef.current) return
+          if (!currentQueryRef.current) return 0
           const containerEl = containerRef.current
-          if (!containerEl) return
+          if (!containerEl) return 0
           const total = containerEl.querySelectorAll('span.editor-find-match').length
-          if (total === 0) return
+          if (total === 0) return 0
           // Drop the previous-active class, advance the cursor, highlight.
           containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
             m.classList.remove('editor-find-active')
           })
           activeIndexRef.current = (activeIndexRef.current + 1) % total
           setActive(total)
+          return activeIndexRef.current + 1
         },
         prev() {
-          if (!currentQueryRef.current) return
+          if (!currentQueryRef.current) return 0
           const containerEl = containerRef.current
-          if (!containerEl) return
+          if (!containerEl) return 0
           const total = containerEl.querySelectorAll('span.editor-find-match').length
-          if (total === 0) return
+          if (total === 0) return 0
           containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
             m.classList.remove('editor-find-active')
           })
           activeIndexRef.current =
             (activeIndexRef.current - 1 + total) % total
           setActive(total)
+          return activeIndexRef.current + 1
         },
         close() {
           currentQueryRef.current = ''
@@ -539,7 +567,7 @@ export function MarkdownPreview({ content, baseRef, onFindController }: Markdown
       const containerRect = container.getBoundingClientRect()
       const targetTop = heading.getBoundingClientRect().top - containerRect.top
       const scrollTop = container.scrollTop + targetTop - 16
-      container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
+      container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'auto' })
       // Update the URL hash so the location bar reflects the destination —
       // useful for "copy link" workflows and back-button navigation.
       try {

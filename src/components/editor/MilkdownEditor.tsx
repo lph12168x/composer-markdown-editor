@@ -8,14 +8,14 @@ import type { FindController } from './FindBar'
 
 export interface MilkdownEditorProps extends EditorProps {
   /**
-   * Called once with a `FindController` backed by a DOM walker that wraps
-   * matches in `<mark class="editor-find-match">`. The FindBar drives
+   * Called once with a `FindController` backed by a DOM walker that
+   * creates CSS Custom Highlight Ranges for matches. The FindBar drives
    * search through this controller; the editor handles highlight +
    * scroll + count internally.
    *
-   * Note: ProseMirror re-renders nodes as the user types, which can wipe
-   * our `<mark>` wrappers. The walker reapplies the active query via
-   * MutationObserver so highlights re-attach automatically after edit.
+   * ProseMirror replaces text nodes on re-render, which invalidates
+   * Range objects. A MutationObserver re-creates the ranges (debounced)
+   * so highlights survive editing while the bar is open.
    */
   onFindController?: (controller: FindController) => void
 }
@@ -36,11 +36,11 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
   // `activeIndex` to 0 and subsequent Enter presses always land on the
   // first match.
   const scrollGuardUntilRef = useRef(0)
-  // Re-entrancy guard. applyFind mutates the DOM (replaceChild +
-  // scrollIntoView) and a synchronous re-entry from a fired
-  // MutationObserver would form a tight loop that freezes the renderer.
-  // The guard short-circuits any re-entry while we are still unwinding;
-  // it is reset in applyFind's finally block.
+  // Re-entrancy guard. applyFind registers CSS Highlights and calls
+  // scrollIntoView; a synchronous re-entry from the MutationObserver
+  // would form a tight loop. The guard short-circuits any re-entry
+  // while we are still unwinding; it is reset in applyFind's finally
+  // block.
   const applyingRef = useRef(false)
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
 
@@ -53,97 +53,69 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
   }, [onFindController])
 
   /**
-   * Walk text nodes inside the editor container and wrap every case-
-   * insensitive occurrence of `query` in `<mark class="editor-find-match">`.
-   * Marks the active match with `editor-find-active`. Unwraps any
-   * previously inserted marks so consecutive searches don't nest.
+   * Walk text nodes inside the editor container and create a CSS Custom
+   * Highlight (Range-based) for every case-insensitive occurrence of
+   * `query`. The active match gets a second highlight group so it can
+   * be styled differently.
    *
-   * Side notes specific to Milkdown:
-   * - The walker operates on `containerRef.current` which contains the
-   *   `.ProseMirror` subtree; ProseMirror's reactive DOM updates can
-   *   wipe our marks, so we also run on every subtree mutation.
-   *   - We deliberately skip `span.editor-find-match` itself when collecting
-   *   text nodes so we don't double-wrap when an old mark survives a
-   *   ProseMirror re-render.
+   * Unlike <span> wrappers, CSS Highlight Ranges don't modify the DOM,
+   * so ProseMirror's reconciler can't strip them — the original
+   * contenteditable="false" approach was stripped on every ProseMirror
+   * view update, making highlights invisible.
    */
+  const matchRangesRef = useRef<Range[]>([])
   const applyFind = (query: string): number => {
     const containerEl = containerRef.current
     if (!containerEl) return 0
-    // Re-entrancy guard: see the comment on `applyingRef` above.
     if (applyingRef.current) return 0
     applyingRef.current = true
     try {
 
-    // 1) Unwrap previous marks.
-    const oldMarks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
-    for (const mark of oldMarks) {
-      const parent = mark.parentNode
-      if (!parent) continue
-      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark)
-      parent.removeChild(mark)
-      parent.normalize()
-    }
+    // 1) Clear previous highlights.
+    CSS.highlights.delete('milkdown-find-match')
+    CSS.highlights.delete('milkdown-find-active')
+    matchRangesRef.current = []
 
     if (!query) return 0
     const needle = query.toLowerCase()
     if (!needle) return 0
 
-    // 2) Find candidate text nodes via TreeWalker (excludes elements
-    //    whose subtree is irrelevant, e.g. our own <mark> mid-search).
+    // 2) Walk text nodes and create a Range for each match.
     const treeWalker = document.createTreeWalker(containerEl, NodeFilter.SHOW_TEXT)
-    const textNodes: Text[] = []
+    const ranges: Range[] = []
     let n: Node | null = treeWalker.nextNode()
     while (n) {
       if (n instanceof Text && n.nodeValue && n.nodeValue.toLowerCase().includes(needle)) {
-        textNodes.push(n)
+        const original = n.nodeValue
+        const haystack = original.toLowerCase()
+        let cursor = 0
+        while (cursor < haystack.length) {
+          const hit = haystack.indexOf(needle, cursor)
+          if (hit < 0) break
+          const range = document.createRange()
+          range.setStart(n, hit)
+          range.setEnd(n, hit + needle.length)
+          ranges.push(range)
+          cursor = hit + Math.max(1, needle.length)
+        }
       }
       n = treeWalker.nextNode()
     }
 
-    // 3) Wrap matches in each text node. The whole subtree is replaced via
-    //    DocumentFragment so we batch the DOM mutations.
-    //
-    //    We use `<span contenteditable="false">` rather than `<mark>`:
-    //    ProseMirror's reconciler treats unknown inline elements as part
-    //    of the document's text representation and will *strip* the
-    //    wrapper the next time it rebuilds the DOM for the surrounding
-    //    node — at which point `next()` would find zero matches and the
-    //    jump would silently no-op. `contenteditable="false"` is one of
-    //    the few inline attributes that ProseMirror's parser explicitly
-    //    preserves across re-renders, so the wrapper survives even
-    //    when the user types inside the document.
-    for (const text of textNodes) {
-      const original = text.nodeValue ?? ''
-      const haystack = original.toLowerCase()
-      const fragment = document.createDocumentFragment()
-      let pos = 0
-      let cursor = 0
-      while (cursor < haystack.length) {
-        const hit = haystack.indexOf(needle, cursor)
-        if (hit < 0) {
-          fragment.appendChild(document.createTextNode(original.slice(pos)))
-          break
-        }
-        if (hit > pos) fragment.appendChild(document.createTextNode(original.slice(pos, hit)))
-        const mark = document.createElement('span')
-        mark.className = 'editor-find-match'
-        mark.setAttribute('contenteditable', 'false')
-        mark.textContent = original.slice(hit, hit + needle.length)
-        fragment.appendChild(mark)
-        pos = hit + needle.length
-        cursor = pos
-      }
-      text.parentNode?.replaceChild(fragment, text)
-    }
+    if (ranges.length === 0) return 0
+    matchRangesRef.current = ranges
 
-    // 4) Set active and scroll.
-    const marks = Array.from(containerEl.querySelectorAll('span.editor-find-match'))
-    if (marks.length === 0) return 0
-    const idx = ((activeIndexRef.current % marks.length) + marks.length) % marks.length
-    const active = marks[idx] as HTMLElement
-    active.classList.add('editor-find-active')
-    active.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    return marks.length
+    // 3) Register all matches + active match as CSS Highlight groups.
+    const matchHighlight = new Highlight(...ranges)
+    CSS.highlights.set('milkdown-find-match', matchHighlight)
+
+    const idx = ((activeIndexRef.current % ranges.length) + ranges.length) % ranges.length
+    CSS.highlights.set('milkdown-find-active', new Highlight(ranges[idx]))
+
+    // 4) Scroll active match into view.
+    ranges[idx].startContainer.parentElement?.scrollIntoView({ behavior: 'auto', block: 'center' })
+
+    return ranges.length
     } finally {
       applyingRef.current = false
     }
@@ -183,43 +155,26 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
           return applyFind(query)
         },
         next() {
-          if (!currentQueryRef.current) return
-          const containerEl = containerRef.current
-          if (!containerEl) return
-          const total = containerEl.querySelectorAll('span.editor-find-match').length
-          if (total === 0) return
-          containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
-            m.classList.remove('editor-find-active')
-          })
-          activeIndexRef.current = (activeIndexRef.current + 1) % total
+          if (!currentQueryRef.current) return 0
+          const ranges = matchRangesRef.current
+          if (ranges.length === 0) return 0
+          activeIndexRef.current = (activeIndexRef.current + 1) % ranges.length
           const idx = activeIndexRef.current
-          const active = containerEl.querySelectorAll('span.editor-find-match')[idx] as HTMLElement | undefined
-          if (active) {
-            active.classList.add('editor-find-active')
-            // Block the MutationObserver for the brief window ProseMirror
-            // needs to settle after a scroll-induced measure pass.
-            scrollGuardUntilRef.current = Date.now() + 120
-            active.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }
+          CSS.highlights.set('milkdown-find-active', new Highlight(ranges[idx]))
+          scrollGuardUntilRef.current = Date.now() + 120
+          ranges[idx].startContainer.parentElement?.scrollIntoView({ behavior: 'auto', block: 'center' })
+          return activeIndexRef.current + 1
         },
         prev() {
-          if (!currentQueryRef.current) return
-          const containerEl = containerRef.current
-          if (!containerEl) return
-          const total = containerEl.querySelectorAll('span.editor-find-match').length
-          if (total === 0) return
-          containerEl.querySelectorAll('span.editor-find-active').forEach((m) => {
-            m.classList.remove('editor-find-active')
-          })
-          activeIndexRef.current =
-            (activeIndexRef.current - 1 + total) % total
+          if (!currentQueryRef.current) return 0
+          const ranges = matchRangesRef.current
+          if (ranges.length === 0) return 0
+          activeIndexRef.current = (activeIndexRef.current - 1 + ranges.length) % ranges.length
           const idx = activeIndexRef.current
-          const active = containerEl.querySelectorAll('span.editor-find-match')[idx] as HTMLElement | undefined
-          if (active) {
-            active.classList.add('editor-find-active')
-            scrollGuardUntilRef.current = Date.now() + 120
-            active.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }
+          CSS.highlights.set('milkdown-find-active', new Highlight(ranges[idx]))
+          scrollGuardUntilRef.current = Date.now() + 120
+          ranges[idx].startContainer.parentElement?.scrollIntoView({ behavior: 'auto', block: 'center' })
+          return activeIndexRef.current + 1
         },
         close() {
           currentQueryRef.current = ''
@@ -229,16 +184,15 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
       }
       cb(controller)
 
-      // ProseMirror re-renders nodes as the user types, which can wipe
-      // our <span> wrappers. Re-apply the active query on every mutation
-      // (debounced) so highlights survive editing while the bar is open.
+      // ProseMirror replaces text nodes on re-render, which invalidates
+      // our Range objects. Re-create the ranges (debounced) so highlights
+      // survive editing while the bar is open. Since CSS Highlights don't
+      // modify the DOM, the only mutations we observe are ProseMirror's
+      // own — no feedback loop.
       //
-      // We also skip the re-apply for the brief window after a
-      // user-driven scrollIntoView() (called by next/prev), because that
-      // measure pass mutates the DOM and would otherwise clobber our
-      // `activeIndex` — putting the highlight cursor back at index 0
-      // every time the user hits Enter. The user-driven path resets
-      // `scrollGuardUntilRef` below; we honor it here.
+      // Skip the re-apply for the brief window after a user-driven
+      // scrollIntoView() (called by next/prev) so activeIndex isn't
+      // reset to 0.
       mo = new MutationObserver(() => {
         if (!currentQueryRef.current) return
         if (applyingRef.current) return
@@ -264,6 +218,8 @@ export function MilkdownEditor({ content, onChange, onFindController }: Milkdown
       cancelAnimationFrame(raf2)
       if (debounceTimer) clearTimeout(debounceTimer)
       mo?.disconnect()
+      CSS.highlights.delete('milkdown-find-match')
+      CSS.highlights.delete('milkdown-find-active')
       void crepe.destroy()
     }
   }, [])

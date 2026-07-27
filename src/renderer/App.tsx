@@ -400,7 +400,7 @@ function App(): JSX.Element {
         }
 
         const offset = target.offsetTop - scrollContainer.offsetTop - 16
-        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' })
+        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: 'auto' })
         setActiveHeading(heading)
         scrollLockUntilRef.current = Date.now() + 320
       }

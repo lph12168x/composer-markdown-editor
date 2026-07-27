@@ -5,15 +5,16 @@ import { Search, X } from 'lucide-react'
  * Command-style interface every editor implements to back the FindBar.
  * `search` is incremental — the editor must update its highlight and match
  * count without waiting for the user to press Enter. `next`/`prev` move the
- * active match; `close` removes the highlight and resets the editor state.
+ * active match and return the 1-indexed position of the new active match.
+ * `close` removes the highlight and resets the editor state.
  */
 export interface FindController {
   /** Apply a new query. Returns the number of matches (0 if none). */
   search(query: string): number
-  /** Move to the next match, wrapping at the end. */
-  next(): void
-  /** Move to the previous match, wrapping at the start. */
-  prev(): void
+  /** Move to the next match, wrapping at the end. Returns 1-indexed position. */
+  next(): number
+  /** Move to the previous match, wrapping at the start. Returns 1-indexed position. */
+  prev(): number
   /** Clear highlights and tear down any internal listeners. */
   close(): void
 }
@@ -29,7 +30,8 @@ interface FindBarProps {
 }
 
 const NO_MATCHES = 'No matches'
-const countText = (n: number): string => (n === 0 ? NO_MATCHES : `${n}`)
+const countText = (pos: number, total: number): string =>
+  total === 0 ? NO_MATCHES : `${pos}/${total}`
 
 /**
  * The shared top-of-editor search bar used across source / preview / edit
@@ -40,6 +42,7 @@ const countText = (n: number): string => (n === 0 ? NO_MATCHES : `${n}`)
 export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Element | null {
   const [query, setQuery] = useState('')
   const [count, setCount] = useState(0)
+  const [position, setPosition] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   // Latest controller snapshot — `getController()` may re-run each tick
   // and the editor can publish a new controller at any time (e.g. after
@@ -74,24 +77,35 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setQuery('')
       setCount(0)
+      setPosition(0)
     }
   }, [open, getController])
 
-  // Re-run search whenever the query changes. `search` is incremental; the
-  // editor updates its highlight and returns the match count.
+  // Re-run search whenever the query changes, debounced so we don't
+  // rebuild highlights on every keystroke. The editor's `applyFind` does
+  // a full DOM walk + unwrap + rewrap + smooth scroll, which is too
+  // expensive to run synchronously per character on large documents.
   useEffect(() => {
     if (!open) return
-    const ctrl = refreshController()
-    if (!ctrl) {
-      setCount(0) // eslint-disable-line react-hooks/set-state-in-effect
-      return
-    }
     if (!query) {
-      ctrl.close()
+      const ctrl = refreshController()
+      ctrl?.close()
       setCount(0)
+      setPosition(0)
       return
     }
-    setCount(ctrl.search(query))
+    const timer = setTimeout(() => {
+      const ctrl = refreshController()
+      if (!ctrl) {
+        setCount(0)
+        setPosition(0)
+        return
+      }
+      const n = ctrl.search(query)
+      setCount(n)
+      setPosition(n > 0 ? 1 : 0)
+    }, 200)
+    return () => clearTimeout(timer)
     // `ctrl` is captured freshly each time via refreshController; we just
     // re-run on query/open changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -123,8 +137,8 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
             e.preventDefault()
             const ctrl = latestControllerRef.current ?? getController()
             if (!ctrl || !query) return
-            if (e.shiftKey) ctrl.prev()
-            else ctrl.next()
+            if (e.shiftKey) setPosition(ctrl.prev())
+            else setPosition(ctrl.next())
           } else if (e.key === 'Escape') {
             e.preventDefault()
             onClose()
@@ -140,14 +154,14 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
         }`}
         aria-live="polite"
       >
-        {query ? countText(count) : ''}
+        {query ? countText(position, count) : ''}
       </span>
       <button
         type="button"
         onClick={() => {
           const ctrl = latestControllerRef.current ?? getController()
           if (!ctrl || !query) return
-          ctrl.prev()
+          setPosition(ctrl.prev())
         }}
         disabled={count === 0}
         className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-600 dark:bg-neutral-900 dark:hover:bg-neutral-700"
@@ -161,7 +175,7 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
         onClick={() => {
           const ctrl = latestControllerRef.current ?? getController()
           if (!ctrl || !query) return
-          ctrl.next()
+          setPosition(ctrl.next())
         }}
         disabled={count === 0}
         className="rounded border border-neutral-300 bg-white px-2 py-0.5 text-xs hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-600 dark:bg-neutral-700 dark:hover:bg-neutral-700"
