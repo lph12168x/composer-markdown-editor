@@ -48,16 +48,23 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   const registerFindController = useCallback((c: FindController | null) => {
     findControllerRef.current = c
   }, [])
-  // Close the find bar when the user switches tabs/modes so the
-  // stale controller from a now-unmounted editor doesn't fire.
+  // Close the find bar when the user switches tabs/modes. Done in the
+  // click handlers rather than a useEffect so we don't call setState
+  // synchronously inside an effect (which cascades renders).
   // We intentionally do NOT null out findControllerRef here: React runs
   // parent effects AFTER child mount effects, so nulling here would
   // clobber the controller the just-mounted editor already published.
   // The old editor's cleanup effect replaces the ref with NOOP_CONTROLLER,
   // and the new editor's mount effect sets it to the real controller.
-  useEffect(() => {
+  const handleActivateDocument = useCallback((id: string) => {
     setFindOpen(false)
-  }, [activeDocumentId, editorMode])
+    activateDocument(id)
+  }, [activateDocument])
+
+  const handleSetEditorMode = useCallback((mode: typeof editorMode) => {
+    setFindOpen(false)
+    setEditorMode(mode)
+  }, [setEditorMode])
 
   const handleSave = useCallback(async () => {
     if (!document || !document.modified) return
@@ -128,7 +135,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
             return (
               <button
                 key={doc.ref.id}
-                onClick={() => activateDocument(doc.ref.id)}
+                onClick={() => handleActivateDocument(doc.ref.id)}
                 className={`group flex max-w-[12rem] shrink-0 items-center gap-2 rounded px-2 py-1 text-xs ${
                   isActive
                     ? 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-white'
@@ -159,7 +166,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
           {document?.kind !== 'image' && (
             <>
               <button
-                onClick={() => setEditorMode('source')}
+                onClick={() => handleSetEditorMode('source')}
                 className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
                   editorMode === 'source'
                     ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
@@ -171,7 +178,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
                 Source
               </button>
               <button
-                onClick={() => setEditorMode('preview')}
+                onClick={() => handleSetEditorMode('preview')}
                 className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
                   editorMode === 'preview'
                     ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
@@ -183,7 +190,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
                 Preview
               </button>
               <button
-                onClick={() => setEditorMode('edit')}
+                onClick={() => handleSetEditorMode('edit')}
                 className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
                   editorMode === 'edit'
                     ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
@@ -196,7 +203,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
               </button>
               {diffTarget && (
                 <button
-                  onClick={() => setEditorMode('diff')}
+                  onClick={() => handleSetEditorMode('diff')}
                   className={`flex items-center gap-1 rounded px-2 py-1 text-xs ${
                     editorMode === 'diff'
                       ? 'bg-white text-neutral-900 shadow-sm dark:bg-neutral-700 dark:text-white'
