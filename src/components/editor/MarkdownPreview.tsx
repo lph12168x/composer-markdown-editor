@@ -3,6 +3,7 @@ import markdownIt from 'markdown-it'
 import markdownItContainer from 'markdown-it-container'
 import DOMPurify from 'dompurify'
 import mermaid from 'mermaid'
+import hljs from 'highlight.js/lib/common'
 import type { FileRef } from '../../types/file'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import '../../styles/markdown-preview.css'
@@ -19,10 +20,38 @@ interface MarkdownPreviewProps {
   onFindController?: (controller: FindController) => void
 }
 
+// Independent escape helper so the highlight() callback doesn't have to
+// reference `md` inside its own initializer (which would trip
+// `noImplicitAny`).
+const escapeHtml = (input: string): string =>
+  input.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)
+
 const md = markdownIt({
   html: true,
   linkify: true,
-  typographer: true
+  typographer: true,
+  // Run fenced code blocks through highlight.js when a known language is
+  // requested. We return the full <pre><code> wrapper so the hljs theme CSS
+  // can match on `.hljs` (hljs needs the class on the root element to apply
+  // its token colors). For unknown languages we still wrap with the hljs
+  // class so the theme's base background/text colors apply, then fall back
+  // to a basic HTML escape. `mermaid` is intentionally NOT routed through
+  // hljs — it is consumed later by `renderMermaidBlocks`, which looks up
+  // blocks via `pre code.language-mermaid`.
+  highlight: (str, lang) => {
+    if (lang === 'mermaid') {
+      return `<pre class="hljs"><code class="hljs language-mermaid">${escapeHtml(str)}</code></pre>`
+    }
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        const result = hljs.highlight(str, { language: lang, ignoreIllegals: true })
+        return `<pre class="hljs"><code class="hljs language-${lang}">${result.value}</code></pre>`
+      } catch {
+        // Fall through to the escaped default below.
+      }
+    }
+    return `<pre class="hljs"><code class="hljs${lang ? ` language-${lang}` : ''}">${escapeHtml(str)}</code></pre>`
+  }
 })
 
 /**
@@ -171,7 +200,11 @@ function sanitizeHtml(html: string): string {
       'dy'
     ],
     ALLOWED_URI_REGEXP:
-      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|xxx|data):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i
+      /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|xxx|data):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+    // Mark SVG `d` (path data) as URI-safe so DOMPurify does not reject it
+    // through the URL regex. Without this, mermaid/flowchart edge paths lose
+    // their `d` attribute during sanitize and the connectors disappear.
+    ADD_URI_SAFE_ATTR: ['d']
   })
 }
 

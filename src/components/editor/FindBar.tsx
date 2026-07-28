@@ -83,17 +83,12 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
 
   // Re-run search whenever the query changes, debounced so we don't
   // rebuild highlights on every keystroke. The editor's `applyFind` does
-  // a full DOM walk + unwrap + rewrap + smooth scroll, which is too
-  // expensive to run synchronously per character on large documents.
+  // a full DOM walk + unwrap + rewrap + scroll, which is too expensive
+  // to run synchronously per character on large documents. The empty-query
+  // reset is handled directly in onChange so we never call setState
+  // synchronously inside this effect body.
   useEffect(() => {
-    if (!open) return
-    if (!query) {
-      const ctrl = refreshController()
-      ctrl?.close()
-      setCount(0)
-      setPosition(0)
-      return
-    }
+    if (!open || !query) return
     const timer = setTimeout(() => {
       const ctrl = refreshController()
       if (!ctrl) {
@@ -144,7 +139,16 @@ export function FindBar({ getController, open, onClose }: FindBarProps): JSX.Ele
             onClose()
           }
         }}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          const val = e.target.value
+          setQuery(val)
+          if (!val) {
+            const ctrl = refreshController()
+            ctrl?.close()
+            setCount(0)
+            setPosition(0)
+          }
+        }}
         className="flex-1 rounded border border-neutral-300 bg-white px-2 py-1 text-xs outline-none focus:border-blue-500 dark:border-neutral-600 dark:bg-neutral-900 dark:text-neutral-100"
         aria-label="Find in document"
       />

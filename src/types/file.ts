@@ -3,7 +3,19 @@ export interface WorkspaceRoot {
   type: 'local' | 'ssh'
   name: string
   path?: string
+  /**
+   * Identifier of the `RecentSshConnection` this root was opened with.
+   * Reserved for future use — today the (host, username) pair on the root
+   * is what we match against when recovering the session.
+   */
   connectionId?: string
+  /**
+   * SSH host the root is bound to. Used to recover the saved credentials
+   * when the user clicks back into a previously-opened remote folder.
+   */
+  host?: string
+  /** SSH username matching `host`. */
+  username?: string
 }
 
 export interface Workspace {
