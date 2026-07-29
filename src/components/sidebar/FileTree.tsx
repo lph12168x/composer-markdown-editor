@@ -3,6 +3,7 @@ import { ChevronRight, ChevronDown, Folder, RefreshCw } from 'lucide-react'
 import type { FileRef, WorkspaceRoot } from '../../types/file'
 import { useDocumentStore, useFileTreeStore } from '../../stores/fileStore'
 import { TreeNode } from './TreeNode'
+import { useSshReconnect } from './sshReconnect'
 
 interface FileTreeProps {
   root: WorkspaceRoot
@@ -22,16 +23,30 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
   // updates as soon as the user switches tabs. We read only the field we
   // need so re-renders are limited to actual tab switches.
   const activeDocumentId = useDocumentStore((s) => s.activeDocumentId)
+  const sshReconnect = useSshReconnect()
 
   useEffect(() => {
-    getChildren(root, rootRef)
-      .then(() => {
+    // Resolve the saved credentials for this root up-front so the
+    // reconnect helper can present the password prompt populated with
+    // the right host/user/port/key path. Without it the helper falls
+    // back to the currently-active SSH session, which may be stale.
+    void (async () => {
+      try {
+        if (root.type === 'ssh' && sshReconnect) {
+          const conn = await sshReconnect.findConnectionForRoot(root)
+          if (conn) {
+            await sshReconnect.ensureSshConnected(conn)
+          } else {
+            await sshReconnect.ensureSshConnected()
+          }
+        }
+        await getChildren(root, rootRef)
         setExpanded(rootRef.id, true)
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error('Failed to load root directory:', err)
-      })
-  }, [root, rootRef, getChildren, setExpanded])
+      }
+    })()
+  }, [root, rootRef, getChildren, setExpanded, sshReconnect])
 
   const isExpanded = expandedNodes.has(rootRef.id)
   const children = treeCache.get(rootRef.id) || []
@@ -40,14 +55,24 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
   // cascades into every expanded child.
   const isRefreshing = loadingNodes.has(rootRef.id)
 
-  const handleToggle = useCallback(() => {
+  const handleToggle = useCallback(async () => {
     if (!isExpanded) {
-      getChildren(root, rootRef).catch((err) => {
+      try {
+        if (root.type === 'ssh' && sshReconnect) {
+          const conn = await sshReconnect.findConnectionForRoot(root)
+          if (conn) {
+            await sshReconnect.ensureSshConnected(conn)
+          } else {
+            await sshReconnect.ensureSshConnected()
+          }
+        }
+        await getChildren(root, rootRef)
+      } catch (err) {
         console.error('Failed to expand directory:', err)
-      })
+      }
     }
     setExpanded(rootRef.id, !isExpanded)
-  }, [isExpanded, root, rootRef, getChildren, setExpanded])
+  }, [isExpanded, root, rootRef, getChildren, setExpanded, sshReconnect])
 
   /**
    * Manually re-read every directory the user has expanded. We deliberately
@@ -57,35 +82,44 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
    * keeps the IPC footprint small and avoids spamming the disk on huge
    * trees where the user has explored only a small slice.
    */
-  const handleRefresh = useCallback((): void => {
-    const rootId = rootRef.id
-    // Always refresh the root, regardless of expand state — that's the
-    // primary reason the user hits the button after an external change.
-    refreshNode(root, rootRef).catch((err) => {
-      console.error('Failed to refresh root directory:', err)
-    })
-    // Refresh every expanded directory descendant. Filter on
-    // `expandedNodes.has(...)` instead of `treeCache.has(...)` so we don't
-    // waste IPC roundtrips on cached-but-collapsed branches.
-    const cache = useFileTreeStore.getState().treeCache
-    for (const [parentId, kids] of cache.entries()) {
-      if (!parentId.startsWith(`${rootId}:`)) continue
-      if (!expandedNodes.has(parentId)) continue
-      // Build a FileRef for the parent so refreshNode can re-read it.
-      const parentRef: FileRef = {
-        id: parentId,
-        rootId: root.id,
-        type: root.type,
-        path: parentId.slice(rootId.length + 1),
-        name: parentId.split('/').pop() ?? parentId,
-        isDirectory: true
+  const handleRefresh = useCallback(async (): Promise<void> => {
+    try {
+      if (root.type === 'ssh' && sshReconnect) {
+        const conn = await sshReconnect.findConnectionForRoot(root)
+        if (conn) {
+          await sshReconnect.ensureSshConnected(conn)
+        } else {
+          await sshReconnect.ensureSshConnected()
+        }
       }
-      void kids // kids already match what refreshNode will fetch; refetch keeps cache honest
-      refreshNode(root, parentRef).catch((err) => {
-        console.error('Failed to refresh directory:', err)
-      })
+
+      const rootId = rootRef.id
+      // Always refresh the root, regardless of expand state — that's the
+      // primary reason the user hits the button after an external change.
+      await refreshNode(root, rootRef)
+      // Refresh every expanded directory descendant. Filter on
+      // `expandedNodes.has(...)` instead of `treeCache.has(...)` so we don't
+      // waste IPC roundtrips on cached-but-collapsed branches.
+      const cache = useFileTreeStore.getState().treeCache
+      for (const [parentId, kids] of cache.entries()) {
+        if (!parentId.startsWith(`${rootId}:`)) continue
+        if (!expandedNodes.has(parentId)) continue
+        // Build a FileRef for the parent so refreshNode can re-read it.
+        const parentRef: FileRef = {
+          id: parentId,
+          rootId: root.id,
+          type: root.type,
+          path: parentId.slice(rootId.length + 1),
+          name: parentId.split('/').pop() ?? parentId,
+          isDirectory: true
+        }
+        void kids // kids already match what refreshNode will fetch; refetch keeps cache honest
+        await refreshNode(root, parentRef)
+      }
+    } catch (err) {
+      console.error('Failed to refresh directory:', err)
     }
-  }, [root, rootRef, refreshNode, expandedNodes])
+  }, [root, rootRef, refreshNode, expandedNodes, sshReconnect])
 
   return (
     <div className="py-1 text-neutral-800">

@@ -5,6 +5,7 @@ import { useDocumentStore, useFileTreeStore } from '../../stores/fileStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { ContextMenu } from './TreeContextMenu'
 import { InlineRename } from './InlineRename'
+import { useSshReconnect } from './sshReconnect'
 
 function basename(filePath: string): string {
   const parts = filePath.split(/[/\\]/)
@@ -45,6 +46,7 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [creating, setCreating] = useState<'file' | 'dir' | null>(null)
+  const sshReconnect = useSshReconnect()
 
   const isExpanded = expandedNodes.has(ref.id)
   const children = ref.isDirectory ? treeCache.get(ref.id) : undefined
@@ -80,6 +82,19 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
     if (!isExpanded) {
       setIsLoading(true)
       try {
+        // If we're dealing with an SSH root and the session has been
+        // dropped (e.g. right after restart), make sure we have a live
+        // connection before talking to SFTP. The user sees the password
+        // prompt again rather than a cryptic `SSH connection is not
+        // established` error in the console.
+        if (root.type === 'ssh' && sshReconnect) {
+          const conn = await sshReconnect.findConnectionForRoot(root)
+          if (conn) {
+            await sshReconnect.ensureSshConnected(conn)
+          } else {
+            await sshReconnect.ensureSshConnected()
+          }
+        }
         await getChildren(root, ref)
       } catch (err) {
         alertError(err, 'Failed to expand directory')
@@ -89,7 +104,7 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
     }
 
     setExpanded(ref.id, !isExpanded)
-  }, [isExpanded, ref, root, getChildren, setExpanded])
+  }, [isExpanded, ref, root, getChildren, setExpanded, sshReconnect])
 
   const handleDoubleClick = (): void => {
     if (ref.isDirectory) return
