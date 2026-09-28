@@ -10,6 +10,10 @@ interface FileTreeProps {
   rootRef: FileRef
 }
 
+function alertError(err: unknown, fallback: string): void {
+  window.alert(err instanceof Error ? err.message : fallback)
+}
+
 export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
   const {
     treeCache,
@@ -117,7 +121,10 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
         await refreshNode(root, parentRef)
       }
     } catch (err) {
-      console.error('Failed to refresh directory:', err)
+      // A silent catch here reads as "the button does nothing" — surfacing
+      // the failure (e.g. a dropped SSH session) is what lets the user
+      // realize a reconnect is needed.
+      alertError(err, 'Failed to refresh directory')
     }
   }, [root, rootRef, refreshNode, expandedNodes, sshReconnect])
 

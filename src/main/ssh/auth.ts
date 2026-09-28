@@ -7,7 +7,11 @@ export async function buildSshConfig(config: SshConnectionConfig): Promise<Conne
     host: config.host,
     port: config.port || 22,
     username: config.username,
-    readyTimeout: 20000
+    readyTimeout: 20000,
+    // Probe the peer periodically so a silently-dead link (network drop,
+    // NAT timeout) raises `close` instead of hanging SFTP requests forever.
+    keepaliveInterval: 30000,
+    keepaliveCountMax: 3
   }
 
   switch (config.auth) {

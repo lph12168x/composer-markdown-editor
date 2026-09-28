@@ -203,6 +203,10 @@ export function WorkspacePanel(): JSX.Element {
    */
   const ensureSshConnected = useCallback(
     async (connection?: RecentSshConnection | null): Promise<void> => {
+      // The renderer's cached flag can be stale: the remote peer may have
+      // dropped the socket without the store ever being told. Re-check
+      // against the main process before skipping the reconnect flow.
+      await useSshStore.getState().fetchStatus()
       if (useSshStore.getState().isConnected) return
 
       let conn = connection ?? null
