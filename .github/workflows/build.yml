@@ -35,9 +35,11 @@ jobs:
       - name: Build
         run: npm run build
 
+  # Packages installers and uploads them as run artifacts. Runs on every
+  # commit push to main; version tags additionally feed the release job.
   package:
     needs: lint-and-build
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
@@ -105,6 +107,8 @@ jobs:
           name: portable-win
           path: dist/*-portable.exe
 
+  # Publishes a GitHub Release only for formal version tags (v*); the
+  # release assets are downloaded from the artifacts built by `package`.
   release:
     needs: package
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

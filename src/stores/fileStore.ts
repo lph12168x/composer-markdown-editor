@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Document, FileRef, WorkspaceRoot } from '../types/file'
 import { fileSystemClient } from '../services/fileSystemClient'
 import { settingsClient } from '../services/settingsClient'
+import { useUiStore } from './uiStore'
 import { APP_CHANNELS } from '../types/ipc'
 
 interface FileTreeState {
@@ -174,6 +175,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   document: null,
 
   openDocument: (ref: FileRef, content: string) => {
+    // Opening a file always defaults to preview mode, regardless of the
+    // mode the previously active document was viewed in.
+    useUiStore.getState().setEditorMode('preview')
     set((state) => {
       const existingIndex = state.documents.findIndex((doc) => doc.ref.id === ref.id)
       let nextDocuments: Document[]

@@ -5,7 +5,7 @@ import { useDocumentStore, useFileTreeStore } from '../../stores/fileStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { ContextMenu } from './TreeContextMenu'
 import { InlineRename } from './InlineRename'
-import { useSshReconnect } from './sshReconnect'
+import { useSshReconnect, isSshConnectionError, isSshReconnectCancelled } from './sshReconnect'
 
 function basename(filePath: string): string {
   const parts = filePath.split(/[/\\]/)
@@ -81,7 +81,7 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
 
     if (!isExpanded) {
       setIsLoading(true)
-      try {
+      const loadChildren = async (): Promise<void> => {
         // If we're dealing with an SSH root and the session has been
         // dropped (e.g. right after restart), make sure we have a live
         // connection before talking to SFTP. The user sees the password
@@ -96,8 +96,27 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
           }
         }
         await getChildren(root, ref)
+      }
+      try {
+        await loadChildren()
       } catch (err) {
-        alertError(err, 'Failed to expand directory')
+        // User dismissed the re-authentication modal — abort the expand
+        // (don't even toggle) and stay quiet.
+        if (isSshReconnectCancelled(err)) return
+        // The reconnect pre-check can race a session that dies mid-expand;
+        // re-prompt for credentials and replay the read once (read-only, so
+        // a retry cannot double-apply anything).
+        if (root.type === 'ssh' && sshReconnect && isSshConnectionError(err)) {
+          try {
+            await loadChildren()
+          } catch (retryErr) {
+            if (!isSshReconnectCancelled(retryErr)) {
+              alertError(retryErr, 'Failed to expand directory')
+            }
+          }
+        } else {
+          alertError(err, 'Failed to expand directory')
+        }
       } finally {
         setIsLoading(false)
       }

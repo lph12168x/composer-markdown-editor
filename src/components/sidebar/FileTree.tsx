@@ -3,11 +3,15 @@ import { ChevronRight, ChevronDown, Folder, RefreshCw } from 'lucide-react'
 import type { FileRef, WorkspaceRoot } from '../../types/file'
 import { useDocumentStore, useFileTreeStore } from '../../stores/fileStore'
 import { TreeNode } from './TreeNode'
-import { useSshReconnect } from './sshReconnect'
+import { useSshReconnect, isSshConnectionError, isSshReconnectCancelled } from './sshReconnect'
 
 interface FileTreeProps {
   root: WorkspaceRoot
   rootRef: FileRef
+}
+
+function alertError(err: unknown, fallback: string): void {
+  window.alert(err instanceof Error ? err.message : fallback)
 }
 
 export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
@@ -74,6 +78,12 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
     setExpanded(rootRef.id, !isExpanded)
   }, [isExpanded, root, rootRef, getChildren, setExpanded, sshReconnect])
 
+  const ensureConnectedForRoot = useCallback(async (): Promise<void> => {
+    if (root.type !== 'ssh' || !sshReconnect) return
+    const conn = await sshReconnect.findConnectionForRoot(root)
+    await sshReconnect.ensureSshConnected(conn)
+  }, [root, sshReconnect])
+
   /**
    * Manually re-read every directory the user has expanded. We deliberately
    * skip collapsed subtrees: their cached content might still be stale,
@@ -82,44 +92,58 @@ export function FileTree({ root, rootRef }: FileTreeProps): JSX.Element {
    * keeps the IPC footprint small and avoids spamming the disk on huge
    * trees where the user has explored only a small slice.
    */
+  const refreshExpandedTree = useCallback(async (): Promise<void> => {
+    const rootId = rootRef.id
+    // Always refresh the root, regardless of expand state — that's the
+    // primary reason the user hits the button after an external change.
+    await refreshNode(root, rootRef)
+    // Refresh every expanded directory descendant. Filter on
+    // `expandedNodes.has(...)` instead of `treeCache.has(...)` so we don't
+    // waste IPC roundtrips on cached-but-collapsed branches.
+    const cache = useFileTreeStore.getState().treeCache
+    for (const [parentId, kids] of cache.entries()) {
+      if (!parentId.startsWith(`${rootId}:`)) continue
+      if (!expandedNodes.has(parentId)) continue
+      // Build a FileRef for the parent so refreshNode can re-read it.
+      const parentRef: FileRef = {
+        id: parentId,
+        rootId: root.id,
+        type: root.type,
+        path: parentId.slice(rootId.length + 1),
+        name: parentId.split('/').pop() ?? parentId,
+        isDirectory: true
+      }
+      void kids // kids already match what refreshNode will fetch; refetch keeps cache honest
+      await refreshNode(root, parentRef)
+    }
+  }, [root, rootRef, refreshNode, expandedNodes])
+
   const handleRefresh = useCallback(async (): Promise<void> => {
     try {
-      if (root.type === 'ssh' && sshReconnect) {
-        const conn = await sshReconnect.findConnectionForRoot(root)
-        if (conn) {
-          await sshReconnect.ensureSshConnected(conn)
-        } else {
-          await sshReconnect.ensureSshConnected()
-        }
-      }
-
-      const rootId = rootRef.id
-      // Always refresh the root, regardless of expand state — that's the
-      // primary reason the user hits the button after an external change.
-      await refreshNode(root, rootRef)
-      // Refresh every expanded directory descendant. Filter on
-      // `expandedNodes.has(...)` instead of `treeCache.has(...)` so we don't
-      // waste IPC roundtrips on cached-but-collapsed branches.
-      const cache = useFileTreeStore.getState().treeCache
-      for (const [parentId, kids] of cache.entries()) {
-        if (!parentId.startsWith(`${rootId}:`)) continue
-        if (!expandedNodes.has(parentId)) continue
-        // Build a FileRef for the parent so refreshNode can re-read it.
-        const parentRef: FileRef = {
-          id: parentId,
-          rootId: root.id,
-          type: root.type,
-          path: parentId.slice(rootId.length + 1),
-          name: parentId.split('/').pop() ?? parentId,
-          isDirectory: true
-        }
-        void kids // kids already match what refreshNode will fetch; refetch keeps cache honest
-        await refreshNode(root, parentRef)
-      }
+      await ensureConnectedForRoot()
+      await refreshExpandedTree()
     } catch (err) {
-      console.error('Failed to refresh directory:', err)
+      // The user dismissed the re-authentication modal — the refresh was
+      // aborted on purpose, so stay quiet instead of stacking an alert.
+      if (isSshReconnectCancelled(err)) return
+      // The pre-refresh status check can race a session that dies mid-refresh:
+      // the status IPC still reports connected, then a later readDir fails
+      // with "SSH connection is not established". Re-prompt for credentials
+      // and replay the refresh once instead of dead-ending in a cryptic error.
+      if (!isSshConnectionError(err)) {
+        alertError(err, 'Failed to refresh directory')
+        return
+      }
+      try {
+        await ensureConnectedForRoot()
+        await refreshExpandedTree()
+      } catch (retryErr) {
+        if (!isSshReconnectCancelled(retryErr)) {
+          alertError(retryErr, 'Failed to refresh directory')
+        }
+      }
     }
-  }, [root, rootRef, refreshNode, expandedNodes, sshReconnect])
+  }, [ensureConnectedForRoot, refreshExpandedTree])
 
   return (
     <div className="py-1 text-neutral-800">

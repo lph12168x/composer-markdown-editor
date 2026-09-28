@@ -25,7 +25,9 @@ const nextMode: Record<Exclude<EditorMode, 'diff'>, Exclude<EditorMode, 'diff'>>
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  editorMode: 'source',
+  // Opening a document lands in preview by default; users switch to
+  // source / edit via the mode toggle when they want to change the file.
+  editorMode: 'preview',
   diffTarget: null,
   setEditorMode: (mode) =>
     set((state) => ({

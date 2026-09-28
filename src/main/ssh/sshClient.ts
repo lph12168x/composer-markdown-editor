@@ -37,6 +37,18 @@ class SshConnectionManager {
               host: config.host,
               username: config.username
             }
+            // A dead socket (server closed the session, network drop) must
+            // clear the cached connection, otherwise getStatus() keeps
+            // reporting connected forever and the renderer never re-prompts
+            // for credentials.
+            const dropConnection = (): void => {
+              if (this.connection === active) {
+                this.connection = null
+              }
+            }
+            client.on('close', dropConnection)
+            client.on('end', dropConnection)
+            client.on('error', dropConnection)
             resolve(active)
           })
         })

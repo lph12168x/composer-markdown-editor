@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { FolderOpen, Server, Settings, Sun, Moon, X } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspaceStore'
 import { useFileTreeStore } from '../../stores/fileStore'
@@ -13,9 +13,39 @@ import { SshConnectModal } from '../modals/SshConnectModal'
 import { RemotePathPicker } from '../modals/RemotePathPicker'
 import { RemoteFilePicker } from '../modals/RemoteFilePicker'
 import { SettingsModal } from '../modals/SettingsModal'
-import { SshReconnectContext, type SshReconnectApi } from './sshReconnect'
+import {
+  SshReconnectContext,
+  SSH_RECONNECT_CANCELLED_MESSAGE,
+  type SshReconnectApi
+} from './sshReconnect'
 
-export function WorkspacePanel(): JSX.Element {
+interface WorkspacePanelProps {
+  /**
+   * Sidebar content rendered BELOW the workspace header but still INSIDE
+   * the `SshReconnectContext.Provider`. App nests the FileTree (and the
+   * Git panel) here so tree chevrons and the refresh button can resolve
+   * `useSshReconnect()` and trigger the reconnect flow — without this the
+   * context is invisible to them and a disconnected session makes every
+   * tree interaction a silent no-op.
+   */
+  children?: ReactNode
+}
+
+/**
+ * Workspace rows show the SSH identity (user@host) instead of the remote
+ * path: the directory name is already displayed by the tree header below,
+ * so repeating it here just duplicates the line. Falls back to host alone
+ * without a username and to the stored name when the root carries no host
+ * (e.g. legacy persisted roots).
+ */
+function workspaceRootLabel(root: WorkspaceRoot): string {
+  if (root.type === 'ssh' && root.host) {
+    return root.username ? `${root.username}@${root.host}` : root.host
+  }
+  return root.name
+}
+
+export function WorkspacePanel({ children }: WorkspacePanelProps): JSX.Element {
   const { workspace, activeRootId, addLocalRoot, addSshRoot, removeRoot, setActiveRoot } = useWorkspaceStore()
   const { connect, isConnected } = useSshStore()
   const [showSshModal, setShowSshModal] = useState(false)
@@ -203,6 +233,10 @@ export function WorkspacePanel(): JSX.Element {
    */
   const ensureSshConnected = useCallback(
     async (connection?: RecentSshConnection | null): Promise<void> => {
+      // The renderer's cached flag can be stale: the remote peer may have
+      // dropped the socket without the store ever being told. Re-check
+      // against the main process before skipping the reconnect flow.
+      await useSshStore.getState().fetchStatus()
       if (useSshStore.getState().isConnected) return
 
       let conn = connection ?? null
@@ -223,16 +257,31 @@ export function WorkspacePanel(): JSX.Element {
         )
       }
 
+      // Key / agent auth carry no secret the user must type, so reconnect
+      // immediately and only fall back to the modal when the saved
+      // credentials no longer work. Password auth always needs the prompt.
+      if (conn.authType !== 'password') {
+        try {
+          const status = await connect(toConnectionConfig(conn))
+          setSshHomePath(status.homePath)
+          setPendingConnection(conn)
+          return
+        } catch {
+          // Saved key failed (missing file, bad passphrase…) — let the
+          // user fix it interactively via the modal below.
+        }
+      }
+
       return new Promise<void>((resolve, reject) => {
         setReconnectState({
           connection: conn,
           onConnected: () => resolve(),
           onCancel: () =>
-            reject(new Error('SSH re-authentication was cancelled'))
+            reject(new Error(SSH_RECONNECT_CANCELLED_MESSAGE))
         })
       })
     },
-    []
+    [connect]
   )
 
   const sshReconnectApi = useMemo<SshReconnectApi>(
@@ -280,27 +329,57 @@ export function WorkspacePanel(): JSX.Element {
     return () => window.removeEventListener('ssh:menu-reconnect', handleMenuReconnect)
   }, [handleDirectSshConnect])
 
+  /**
+   * Menu-triggered remote actions (open remote folder / file) carry no
+   * workspace-root context, so resolve credentials from the recent
+   * connections list: prefer the entry matching the active session, then
+   * fall back to the most recent one (the list is newest-first). Passes
+   * through `ensureSshConnected`, which is a cheap status re-check while
+   * connected and kicks off the reconnect flow (silent for key/agent,
+   * password modal otherwise) when the session is down — so the menu
+   * action lands in the picker instead of dying on the first SFTP call.
+   */
+  const reconnectFromRecents = useCallback(async (): Promise<void> => {
+    const { host, username } = useSshStore.getState()
+    const connections = await settingsClient.listRecentConnections()
+    const conn =
+      (host && username
+        ? connections.find((c) => c.host === host && c.username === username)
+        : undefined) ??
+      connections[0] ??
+      null
+    await ensureSshConnected(conn)
+  }, [ensureSshConnected])
+
   useEffect(() => {
     const handleOpenRemoteFolder = async (): Promise<void> => {
-      const { isConnected: connected } = useSshStore.getState()
-      if (connected) {
-        await openRemoteFolderPicker()
+      try {
+        await reconnectFromRecents()
+      } catch (err) {
+        // Cancelled re-auth or no saved connection — there is nothing
+        // sensible to open, so keep the menu click quiet.
+        console.error('SSH reconnect before opening remote folder failed:', err)
+        return
       }
+      await openRemoteFolderPicker()
     }
     window.addEventListener('ssh:open-folder', handleOpenRemoteFolder)
     return () => window.removeEventListener('ssh:open-folder', handleOpenRemoteFolder)
-  }, [openRemoteFolderPicker])
+  }, [openRemoteFolderPicker, reconnectFromRecents])
 
   useEffect(() => {
     const handleOpenRemoteFile = async (): Promise<void> => {
-      const { isConnected: connected } = useSshStore.getState()
-      if (connected) {
-        await openRemoteFilePicker()
+      try {
+        await reconnectFromRecents()
+      } catch (err) {
+        console.error('SSH reconnect before opening remote file failed:', err)
+        return
       }
+      await openRemoteFilePicker()
     }
     window.addEventListener('ssh:open-file', handleOpenRemoteFile)
     return () => window.removeEventListener('ssh:open-file', handleOpenRemoteFile)
-  }, [openRemoteFilePicker])
+  }, [openRemoteFilePicker, reconnectFromRecents])
 
   return (
     <SshReconnectContext.Provider value={sshReconnectApi}>
@@ -377,7 +456,7 @@ export function WorkspacePanel(): JSX.Element {
                 ) : (
                   <FolderOpen size={14} className="shrink-0 text-blue-500" />
                 )}
-                <span className="truncate">{root.name}</span>
+                <span className="truncate">{workspaceRootLabel(root)}</span>
               </button>
               <button
                 onClick={() => removeRoot(root.id)}
@@ -453,6 +532,7 @@ export function WorkspacePanel(): JSX.Element {
         />
       )}
     </div>
+    {children}
     </SshReconnectContext.Provider>
   )
 }

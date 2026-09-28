@@ -36,3 +36,27 @@ export const SshReconnectContext = createContext<SshReconnectApi | null>(null)
 export function useSshReconnect(): SshReconnectApi | null {
   return useContext(SshReconnectContext)
 }
+
+/**
+ * Main-process SFTP helpers throw `SSH connection is not established` once
+ * the session has dropped, and Electron IPC embeds that message in the
+ * renderer-side error. Read-only tree operations use this to tell "session
+ * died" (worth a reconnect prompt + one retry) apart from ordinary
+ * filesystem errors (report as-is).
+ */
+export function isSshConnectionError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.includes('SSH connection is not established')
+}
+
+/**
+ * `ensureSshConnected` rejects with this message when the user dismisses
+ * the re-authentication modal. Callers treat it as "operation aborted on
+ * purpose" and stay quiet instead of stacking an alert on top of the modal
+ * the user just closed.
+ */
+export const SSH_RECONNECT_CANCELLED_MESSAGE = 'SSH re-authentication was cancelled'
+
+export function isSshReconnectCancelled(err: unknown): boolean {
+  return err instanceof Error && err.message === SSH_RECONNECT_CANCELLED_MESSAGE
+}

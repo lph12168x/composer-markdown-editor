@@ -565,43 +565,48 @@ function App(): JSX.Element {
             className="flex flex-col border-r border-neutral-200 bg-white dark:border-neutral-700 dark:bg-neutral-900"
             style={{ width: leftWidth, minWidth: 180, maxWidth: 480 }}
           >
-            <WorkspacePanel />
-            <div className="flex-1 overflow-auto">
-              {activeRoot && (
-                <FileTree
-                  root={activeRoot}
-                  rootRef={{
-                    id: activeRoot.id,
-                    rootId: activeRoot.id,
-                    type: activeRoot.type,
-                    path: activeRoot.path || '',
-                    name: activeRoot.name,
-                    isDirectory: true
-                  }}
-                />
+            {/* Nesting the tree / git panel as WorkspacePanel children keeps
+                them inside SshReconnectContext: a disconnected SSH session
+                then triggers the reconnect flow from any tree interaction
+                (chevron, refresh) instead of failing silently. */}
+            <WorkspacePanel>
+              <div className="flex-1 overflow-auto">
+                {activeRoot && (
+                  <FileTree
+                    root={activeRoot}
+                    rootRef={{
+                      id: activeRoot.id,
+                      rootId: activeRoot.id,
+                      type: activeRoot.type,
+                      path: activeRoot.path || '',
+                      name: activeRoot.name,
+                      isDirectory: true
+                    }}
+                  />
+                )}
+              </div>
+              {activeRoot?.path && (
+                <>
+                  <div
+                    className="group flex h-1 cursor-row-resize items-center justify-center bg-neutral-100 hover:bg-blue-200 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+                    onMouseDown={startGitResize}
+                    title="Drag to resize"
+                  >
+                    <div className="h-0.5 w-8 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+                  </div>
+                  <div
+                    className="overflow-hidden"
+                    style={{
+                      height: gitExpanded ? gitPanelHeight : 'auto',
+                      minHeight: gitExpanded ? 120 : 'auto',
+                      maxHeight: gitExpanded ? 480 : 'auto'
+                    }}
+                  >
+                    <GitPanel root={activeRoot} expanded={gitExpanded} onExpandedChange={setGitExpanded} />
+                  </div>
+                </>
               )}
-            </div>
-            {activeRoot?.path && (
-              <>
-                <div
-                  className="group flex h-1 cursor-row-resize items-center justify-center bg-neutral-100 hover:bg-blue-200 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
-                  onMouseDown={startGitResize}
-                  title="Drag to resize"
-                >
-                  <div className="h-0.5 w-8 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
-                </div>
-                <div
-                  className="overflow-hidden"
-                  style={{
-                    height: gitExpanded ? gitPanelHeight : 'auto',
-                    minHeight: gitExpanded ? 120 : 'auto',
-                    maxHeight: gitExpanded ? 480 : 'auto'
-                  }}
-                >
-                  <GitPanel root={activeRoot} expanded={gitExpanded} onExpandedChange={setGitExpanded} />
-                </div>
-              </>
-            )}
+            </WorkspacePanel>
           </aside>
           <div
             className="group flex w-1 cursor-col-resize items-center justify-center border-r border-neutral-200 bg-neutral-100 hover:bg-blue-200 dark:border-neutral-700 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
