@@ -96,11 +96,7 @@ export function buildAppMenu(): void {
   if (isMac) {
     template.push({
       label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
+      submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }]
     })
   }
 
@@ -173,6 +169,14 @@ export function buildAppMenu(): void {
         accelerator: 'CmdOrCtrl+Shift+B',
         click: () => {
           sendToRenderer(MENU_CHANNELS.TOGGLE_RIGHT_PANEL)
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Refresh File',
+        accelerator: 'F5',
+        click: () => {
+          sendToRenderer(MENU_CHANNELS.REFRESH_FILE)
         }
       },
       { type: 'separator' },

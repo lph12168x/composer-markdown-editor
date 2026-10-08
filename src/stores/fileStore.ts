@@ -91,6 +91,7 @@ interface DocumentState {
   document: Document | null
   openDocument: (ref: FileRef, content: string) => void
   openImageDocument: (ref: FileRef, dataUrl: string) => void
+  reloadDocument: (ref: FileRef, content: string) => void
   activateDocument: (id: string) => void
   updateContent: (content: string) => void
   updateRawContent: (rawContent: string) => void
@@ -104,15 +105,7 @@ interface DocumentState {
  * Image extensions that the file tree recognizes as image documents.
  * Kept in sync with the MIME map inside `LocalFileSystemProvider.readFileAsDataUrl`.
  */
-export const IMAGE_EXTENSIONS = new Set([
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.gif',
-  '.webp',
-  '.svg',
-  '.bmp'
-])
+export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'])
 
 export function isImageRef(ref: FileRef): boolean {
   // ref.name carries the basename; ref.path is also fine and survives rename.
@@ -124,6 +117,7 @@ export function isImageRef(ref: FileRef): boolean {
 function createDocument(ref: FileRef, content: string): Document {
   return {
     ref,
+    revision: 0,
     kind: 'markdown',
     content,
     rawContent: content,
@@ -138,6 +132,7 @@ function createDocument(ref: FileRef, content: string): Document {
 function createImageDocument(ref: FileRef, dataUrl: string): Document {
   return {
     ref,
+    revision: 0,
     kind: 'image',
     // For image docs `content` doubles as the data URL — renderers and the
     // Tab title only ever read `ref.name`, so it's safe to overload the
@@ -152,7 +147,10 @@ function createImageDocument(ref: FileRef, dataUrl: string): Document {
   }
 }
 
-function findActiveDocument(documents: Document[], activeDocumentId: string | null): Document | null {
+function findActiveDocument(
+  documents: Document[],
+  activeDocumentId: string | null
+): Document | null {
   if (!activeDocumentId) return null
   return documents.find((doc) => doc.ref.id === activeDocumentId) ?? null
 }
@@ -185,6 +183,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         nextDocuments = [...state.documents]
         nextDocuments[existingIndex] = {
           ...nextDocuments[existingIndex],
+          revision: nextDocuments[existingIndex].revision + 1,
           content,
           rawContent: content,
           originalContent: content,
@@ -256,6 +255,38 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       return {
         activeDocumentId: id,
         document: findActiveDocument(state.documents, id)
+      }
+    })
+  },
+
+  /**
+   * Replace an already-open buffer with fresh bytes from disk (View ▸ Refresh
+   * File, external-change reload). Unlike `openDocument` this leaves the
+   * editor mode alone, so the user stays in Source/Edit/Preview where they
+   * already were.
+   */
+  reloadDocument: (ref: FileRef, content: string) => {
+    set((state) => {
+      const index = state.documents.findIndex((doc) => doc.ref.id === ref.id)
+      if (index === -1) return state
+      const existing = state.documents[index]
+      const updated: Document = {
+        ...existing,
+        ref,
+        revision: existing.revision + 1,
+        content,
+        rawContent: content,
+        originalContent: content,
+        modified: false,
+        hasNormalized: false,
+        lastModifiedEditor: null
+      }
+      const nextDocuments = [...state.documents]
+      nextDocuments[index] = updated
+      reportModified(nextDocuments)
+      return {
+        documents: nextDocuments,
+        document: findActiveDocument(nextDocuments, state.activeDocumentId)
       }
     })
   },

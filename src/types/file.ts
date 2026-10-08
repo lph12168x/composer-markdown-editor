@@ -37,6 +37,13 @@ export interface FileRef {
 export interface Document {
   ref: FileRef
   /**
+   * Bumped every time the buffer is replaced from disk (external-change
+   * reload, View ▸ Refresh File). The WYSIWYG editor only reads `content`
+   * on mount, so `EditorPane` folds this into the component key to force a
+   * remount when the file changes underneath the user.
+   */
+  revision: number
+  /**
    * What kind of file this is. Markdown documents keep the legacy string
    * `content`; image documents carry a base64 `dataUrl` and are read-only.
    */

@@ -56,15 +56,21 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
   // clobber the controller the just-mounted editor already published.
   // The old editor's cleanup effect replaces the ref with NOOP_CONTROLLER,
   // and the new editor's mount effect sets it to the real controller.
-  const handleActivateDocument = useCallback((id: string) => {
-    setFindOpen(false)
-    activateDocument(id)
-  }, [activateDocument])
+  const handleActivateDocument = useCallback(
+    (id: string) => {
+      setFindOpen(false)
+      activateDocument(id)
+    },
+    [activateDocument]
+  )
 
-  const handleSetEditorMode = useCallback((mode: typeof editorMode) => {
-    setFindOpen(false)
-    setEditorMode(mode)
-  }, [setEditorMode])
+  const handleSetEditorMode = useCallback(
+    (mode: typeof editorMode) => {
+      setFindOpen(false)
+      setEditorMode(mode)
+    },
+    [setEditorMode]
+  )
 
   const handleSave = useCallback(async () => {
     if (!document || !document.modified) return
@@ -220,10 +226,10 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
         </div>
       </div>
       <FindBar
-          getController={() => findControllerRef.current}
-          open={findOpen && document?.kind !== 'image'}
-          onClose={() => setFindOpen(false)}
-        />
+        getController={() => findControllerRef.current}
+        open={findOpen && document?.kind !== 'image'}
+        onClose={() => setFindOpen(false)}
+      />
       <div className="flex-1 overflow-hidden dark:bg-neutral-900 dark:text-white">
         {editorMode === 'diff' && document?.kind !== 'image' ? (
           <DiffViewer />
@@ -232,7 +238,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
         ) : document ? (
           editorMode === 'edit' ? (
             <MarkdownEditor
-              key={document.ref.id}
+              key={`${document.ref.id}:${document.revision}`}
               content={document.content}
               onChange={updateContent}
               onFindController={registerFindController}
@@ -245,7 +251,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
             />
           ) : (
             <SourceEditor
-              key={document.ref.id}
+              key={`${document.ref.id}:${document.revision}`}
               content={document.rawContent}
               onChange={updateRawContent}
               onActiveHeadingChange={onActiveHeadingChange}

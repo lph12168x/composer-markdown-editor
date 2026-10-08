@@ -25,13 +25,20 @@ function getBaseName(filePath: string): string {
 }
 
 function isUnderRoot(filePath: string, rootPath: string): boolean {
-  const sep = rootPath.endsWith('/') || rootPath.endsWith('\\') ? '' : filePath.includes('\\') ? '\\' : '/'
+  const sep =
+    rootPath.endsWith('/') || rootPath.endsWith('\\') ? '' : filePath.includes('\\') ? '\\' : '/'
   return filePath.startsWith(rootPath + sep)
 }
 
 function App(): JSX.Element {
-  const { workspace, activeRootId, addLocalRoot, loadWorkspace, setActiveRoot } = useWorkspaceStore()
-  const { document: currentDocument, documents, openDocument, openImageDocument } = useDocumentStore()
+  const { workspace, activeRootId, collapsedRootIds, addLocalRoot, loadWorkspace, setActiveRoot } =
+    useWorkspaceStore()
+  const {
+    document: currentDocument,
+    documents,
+    openDocument,
+    openImageDocument
+  } = useDocumentStore()
   const handleAddLocalRoot = useCallback(
     (path: string) => {
       addLocalRoot(path)
@@ -39,6 +46,33 @@ function App(): JSX.Element {
     [addLocalRoot]
   )
   const activeRoot = workspace.roots.find((r) => r.id === activeRootId)
+  // View ▸ Refresh File: re-read the active document from disk so content
+  // written by another application shows up without reopening the tab.
+  const refreshActiveDocument = useCallback(async (): Promise<void> => {
+    const store = useDocumentStore.getState()
+    const doc = store.document
+    if (!doc) return
+
+    if (
+      doc.modified &&
+      !window.confirm(`"${doc.ref.name}" has unsaved changes. Reload anyway and discard them?`)
+    ) {
+      return
+    }
+
+    try {
+      const content =
+        doc.kind === 'image'
+          ? await fileSystemClient.readFileAsDataUrl(doc.ref)
+          : await fileSystemClient.readFile(doc.ref)
+      store.reloadDocument(doc.ref, content)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to refresh file'
+      window.alert(message)
+      console.error('Failed to refresh file:', err)
+    }
+  }, [])
+
   const [showSettings, setShowSettings] = useState(false)
   const [recentDirs, setRecentDirs] = useState<string[]>([])
   const [leftWidth, setLeftWidth] = useState(288)
@@ -55,105 +89,120 @@ function App(): JSX.Element {
     }
   }, [addLocalRoot])
 
-  const openLocalFileByPath = useCallback(async (filePath: string): Promise<void> => {
-    const roots = useWorkspaceStore.getState().workspace.roots
-    const existingRoot = roots.find(
-      (r) => r.type === 'local' && r.path && isUnderRoot(filePath, r.path)
-    )
-
-    let root = existingRoot
-    if (!root) {
-      const dir = getDirName(filePath)
-      addLocalRoot(dir)
-      root = useWorkspaceStore.getState().workspace.roots.find(
-        (r) => r.type === 'local' && r.path === dir
+  const openLocalFileByPath = useCallback(
+    async (filePath: string): Promise<void> => {
+      const roots = useWorkspaceStore.getState().workspace.roots
+      const existingRoot = roots.find(
+        (r) => r.type === 'local' && r.path && isUnderRoot(filePath, r.path)
       )
-    }
 
-    if (root) {
-      setActiveRoot(root.id)
-    }
+      let root = existingRoot
+      if (!root) {
+        const dir = getDirName(filePath)
+        addLocalRoot(dir)
+        root = useWorkspaceStore
+          .getState()
+          .workspace.roots.find((r) => r.type === 'local' && r.path === dir)
+      }
 
-    const ref: FileRef = {
-      id: `local:${filePath}`,
-      rootId: root?.id || 'drop',
-      type: 'local',
-      path: filePath,
-      name: getBaseName(filePath),
-      isDirectory: false
-    }
+      if (root) {
+        setActiveRoot(root.id)
+      }
 
-    if (isImageRef(ref)) {
-      const dataUrl = await fileSystemClient.readFileAsDataUrl(ref)
-      openImageDocument(ref, dataUrl)
-    } else {
-      const content = await fileSystemClient.readFile(ref)
-      openDocument(ref, content)
-    }
-  }, [addLocalRoot, openDocument, openImageDocument, setActiveRoot])
+      const ref: FileRef = {
+        id: `local:${filePath}`,
+        rootId: root?.id || 'drop',
+        type: 'local',
+        path: filePath,
+        name: getBaseName(filePath),
+        isDirectory: false
+      }
 
-  const startLeftResize = useCallback((e: React.MouseEvent): void => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startWidth = leftWidth
-    const minWidth = 180
-    const maxWidth = 480
+      if (isImageRef(ref)) {
+        const dataUrl = await fileSystemClient.readFileAsDataUrl(ref)
+        openImageDocument(ref, dataUrl)
+      } else {
+        const content = await fileSystemClient.readFile(ref)
+        openDocument(ref, content)
+      }
+    },
+    [addLocalRoot, openDocument, openImageDocument, setActiveRoot]
+  )
 
-    const onMove = (ev: MouseEvent): void => {
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + ev.clientX - startX))
-      setLeftWidth(newWidth)
-    }
+  const startLeftResize = useCallback(
+    (e: React.MouseEvent): void => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startWidth = leftWidth
+      const minWidth = 180
+      const maxWidth = 480
 
-    const onUp = (): void => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+      const onMove = (ev: MouseEvent): void => {
+        const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + ev.clientX - startX))
+        setLeftWidth(newWidth)
+      }
 
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [leftWidth])
+      const onUp = (): void => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
 
-  const startRightResize = useCallback((e: React.MouseEvent): void => {
-    e.preventDefault()
-    const startX = e.clientX
-    const startWidth = rightWidth
-    const minWidth = 180
-    const maxWidth = 480
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [leftWidth]
+  )
 
-    const onMove = (ev: MouseEvent): void => {
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - (ev.clientX - startX)))
-      setRightWidth(newWidth)
-    }
+  const startRightResize = useCallback(
+    (e: React.MouseEvent): void => {
+      e.preventDefault()
+      const startX = e.clientX
+      const startWidth = rightWidth
+      const minWidth = 180
+      const maxWidth = 480
 
-    const onUp = (): void => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+      const onMove = (ev: MouseEvent): void => {
+        const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth - (ev.clientX - startX)))
+        setRightWidth(newWidth)
+      }
 
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [rightWidth])
+      const onUp = (): void => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
 
-  const startGitResize = useCallback((e: React.MouseEvent): void => {
-    e.preventDefault()
-    const startY = e.clientY
-    const startHeight = gitPanelHeight
-    const minHeight = 120
-    const maxHeight = 480
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [rightWidth]
+  )
 
-    const onMove = (ev: MouseEvent): void => {
-      const newHeight = Math.max(minHeight, Math.min(maxHeight, startHeight - (ev.clientY - startY)))
-      setGitPanelHeight(newHeight)
-    }
+  const startGitResize = useCallback(
+    (e: React.MouseEvent): void => {
+      e.preventDefault()
+      const startY = e.clientY
+      const startHeight = gitPanelHeight
+      const minHeight = 120
+      const maxHeight = 480
 
-    const onUp = (): void => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
+      const onMove = (ev: MouseEvent): void => {
+        const newHeight = Math.max(
+          minHeight,
+          Math.min(maxHeight, startHeight - (ev.clientY - startY))
+        )
+        setGitPanelHeight(newHeight)
+      }
 
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }, [gitPanelHeight])
+      const onUp = (): void => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    [gitPanelHeight]
+  )
 
   // Load persisted theme, workspace, and window state on startup.
   useEffect(() => {
@@ -301,13 +350,21 @@ function App(): JSX.Element {
         window.dispatchEvent(new CustomEvent('file:open', { detail: file }))
       } else if (action === 'open-recent-ssh' && payload && typeof payload === 'object') {
         window.dispatchEvent(new CustomEvent('ssh:menu-reconnect', { detail: payload }))
+      } else if (action === 'refresh-file') {
+        void refreshActiveDocument()
       } else if (action === 'toggle-left-panel') {
         setLeftVisible((v) => !v)
       } else if (action === 'toggle-right-panel') {
         setRightVisible((v) => !v)
       }
     })
-  }, [handleAddLocalRoot, handleOpenFolder, openDocument, openLocalFileByPath])
+  }, [
+    handleAddLocalRoot,
+    handleOpenFolder,
+    openDocument,
+    openLocalFileByPath,
+    refreshActiveDocument
+  ])
 
   // Close-before-save prompt.
   useEffect(() => {
@@ -344,7 +401,9 @@ function App(): JSX.Element {
       fileSystemClient
         .readFile(changedRef)
         .then((content) => {
-          openDocument(changedRef, content)
+          // `reloadDocument` (not `openDocument`) so the buffer is replaced
+          // in the mode the user is already looking at.
+          useDocumentStore.getState().reloadDocument(changedRef, content)
         })
         .catch((err) => {
           const message = err instanceof Error ? err.message : 'Failed to reload file'
@@ -354,208 +413,208 @@ function App(): JSX.Element {
     })
 
     return unsubscribe
-  }, [currentDocument, openDocument])
+  }, [currentDocument])
 
   // Outline synchronization: track the heading currently visible at the top
-    // of the editor scroller and pass it to <TocPanel> for highlighting.
-    const editorMode = useUiStore((s) => s.editorMode)
-    const [activeHeading, setActiveHeading] = useState<Heading | null>(null)
-    // While the outline itself programmatically scrolls the body, the
-    // IntersectionObserver will momentarily disagree with the clicked target.
-    // This ref locks `activeHeading` for a short window so the highlight does
-    // not flicker during that settle period.
-    const scrollLockUntilRef = useRef<number>(0)
+  // of the editor scroller and pass it to <TocPanel> for highlighting.
+  const editorMode = useUiStore((s) => s.editorMode)
+  const [activeHeading, setActiveHeading] = useState<Heading | null>(null)
+  // While the outline itself programmatically scrolls the body, the
+  // IntersectionObserver will momentarily disagree with the clicked target.
+  // This ref locks `activeHeading` for a short window so the highlight does
+  // not flicker during that settle period.
+  const scrollLockUntilRef = useRef<number>(0)
 
-    // Scroll the editor to the heading selected in the outline panel.
-      const handleHeadingClick = (heading: Heading): void => {
-        const editorPane = document.querySelector('[data-editor-pane="true"]')
-        if (!editorPane) return
+  // Scroll the editor to the heading selected in the outline panel.
+  const handleHeadingClick = (heading: Heading): void => {
+    const editorPane = document.querySelector('[data-editor-pane="true"]')
+    if (!editorPane) return
 
-        const scrollContainer = editorPane.querySelector('[data-editor-scroll="true"]')
-        if (!(scrollContainer instanceof HTMLElement)) return
+    const scrollContainer = editorPane.querySelector('[data-editor-scroll="true"]')
+    if (!(scrollContainer instanceof HTMLElement)) return
 
-        // Source mode renders headings only as plain `.cm-line` text — there is
-        // no semantic `<hN>` DOM node for the legacy DOM lookup to find. App
-        // dispatches a CustomEvent that SourceEditor listens for; it translates
-        // the 0-indexed `heading.line` into a CodeMirror position and scrolls.
-        const isSourceMode = editorMode === 'source'
-        if (isSourceMode) {
-          scrollContainer.dispatchEvent(
-            new CustomEvent('editor:scroll-to-line', { detail: { line: heading.line } })
-          )
-          setActiveHeading(heading)
-          scrollLockUntilRef.current = Date.now() + 320
-          return
-        }
-
-        const allHeadings = editorPane.querySelectorAll(`h${heading.level}`)
-        const target = allHeadings[heading.levelIndex]
-        if (!(target instanceof HTMLElement)) {
-          // Heading not yet in DOM (e.g. preview still re-rendering). Fall back
-          // to the native scrollIntoView so the click still does *something*.
-          void editorPane.querySelector('[data-editor-scroll="true"]')?.scrollTo({ top: 0 })
-          setActiveHeading(heading)
-          scrollLockUntilRef.current = Date.now() + 320
-          return
-        }
-
-        const offset = target.offsetTop - scrollContainer.offsetTop - 16
-        scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: 'auto' })
-        setActiveHeading(heading)
-        scrollLockUntilRef.current = Date.now() + 320
-      }
-
-    /**
-     * Receive a heading picked by an editor (currently only `SourceEditor`,
-     * which does not render semantic `<hN>` elements and so cannot be observed
-     * via IntersectionObserver).
-     *
-     * Guarded by `scrollLockUntilRef` so the outline click that triggered the
-     * scroll does not get clobbered by the editor's own scroll-driven report.
-     */
-    const handleEditorActiveHeadingChange = useCallback((heading: Heading | null): void => {
-      if (Date.now() < scrollLockUntilRef.current) return
+    // Source mode renders headings only as plain `.cm-line` text — there is
+    // no semantic `<hN>` DOM node for the legacy DOM lookup to find. App
+    // dispatches a CustomEvent that SourceEditor listens for; it translates
+    // the 0-indexed `heading.line` into a CodeMirror position and scrolls.
+    const isSourceMode = editorMode === 'source'
+    if (isSourceMode) {
+      scrollContainer.dispatchEvent(
+        new CustomEvent('editor:scroll-to-line', { detail: { line: heading.line } })
+      )
       setActiveHeading(heading)
-    }, [])
+      scrollLockUntilRef.current = Date.now() + 320
+      return
+    }
 
-    // Watch the editor scroll container and keep `activeHeading` in sync.
-    //
-    // DOM-based observation only works for `edit` and `preview` modes, where
-    // the editor renders semantic `<hN>` elements inside the scroll container.
-    // In `source` mode the editor is a CodeMirror instance that renders flat
-    // `.cm-line` nodes only; <SourceEditor> drives `activeHeading` itself via
-    // the `onActiveHeadingChange` prop. In `diff` mode there is no document
-    // body to scroll, so we leave the highlight cleared.
-    //
-    // Effect fires only when the document or view mode changes; observers are
-    // torn down and rebuilt on each cycle so we never leak listeners onto a
-    // detached DOM (Crepe mounts asynchronously).
-    useEffect(() => {
-      if (editorMode !== 'edit' && editorMode !== 'preview') {
-        // `source` mode: SourceEditor reports headings to us via callback.
-        // `diff` mode: nothing to highlight.
-        return
-      }
+    const allHeadings = editorPane.querySelectorAll(`h${heading.level}`)
+    const target = allHeadings[heading.levelIndex]
+    if (!(target instanceof HTMLElement)) {
+      // Heading not yet in DOM (e.g. preview still re-rendering). Fall back
+      // to the native scrollIntoView so the click still does *something*.
+      void editorPane.querySelector('[data-editor-scroll="true"]')?.scrollTo({ top: 0 })
+      setActiveHeading(heading)
+      scrollLockUntilRef.current = Date.now() + 320
+      return
+    }
 
-      let io: IntersectionObserver | null = null
-      let mo: MutationObserver | null = null
-      let initTimer: ReturnType<typeof setTimeout> | null = null
-      let raf: number | null = null
-      let scrollContainer: HTMLElement | null = null
-      let scrollListener: (() => void) | null = null
+    const offset = target.offsetTop - scrollContainer.offsetTop - 16
+    scrollContainer.scrollTo({ top: Math.max(0, offset), behavior: 'auto' })
+    setActiveHeading(heading)
+    scrollLockUntilRef.current = Date.now() + 320
+  }
 
-      const pickActive = (): void => {
-        if (!scrollContainer) return
-        // Skip while a click-driven scroll is settling.
-        if (Date.now() < scrollLockUntilRef.current) return
+  /**
+   * Receive a heading picked by an editor (currently only `SourceEditor`,
+   * which does not render semantic `<hN>` elements and so cannot be observed
+   * via IntersectionObserver).
+   *
+   * Guarded by `scrollLockUntilRef` so the outline click that triggered the
+   * scroll does not get clobbered by the editor's own scroll-driven report.
+   */
+  const handleEditorActiveHeadingChange = useCallback((heading: Heading | null): void => {
+    if (Date.now() < scrollLockUntilRef.current) return
+    setActiveHeading(heading)
+  }, [])
 
-        const containerRect = scrollContainer.getBoundingClientRect()
-        const viewportH = scrollContainer.clientHeight
-        // Active band: the top 40% of the visible scroll area. A heading
-        // becomes active as soon as its top edge scrolls up past the 40% line;
-        // this matches the "section the user is currently reading" UX used by
-        // Notion / Typora / VSCode Outline.
-        const activeLimit = containerRect.top + viewportH * 0.4
+  // Watch the editor scroll container and keep `activeHeading` in sync.
+  //
+  // DOM-based observation only works for `edit` and `preview` modes, where
+  // the editor renders semantic `<hN>` elements inside the scroll container.
+  // In `source` mode the editor is a CodeMirror instance that renders flat
+  // `.cm-line` nodes only; <SourceEditor> drives `activeHeading` itself via
+  // the `onActiveHeadingChange` prop. In `diff` mode there is no document
+  // body to scroll, so we leave the highlight cleared.
+  //
+  // Effect fires only when the document or view mode changes; observers are
+  // torn down and rebuilt on each cycle so we never leak listeners onto a
+  // detached DOM (Crepe mounts asynchronously).
+  useEffect(() => {
+    if (editorMode !== 'edit' && editorMode !== 'preview') {
+      // `source` mode: SourceEditor reports headings to us via callback.
+      // `diff` mode: nothing to highlight.
+      return
+    }
 
-        let best: { heading: Heading; top: number } | null = null
+    let io: IntersectionObserver | null = null
+    let mo: MutationObserver | null = null
+    let initTimer: ReturnType<typeof setTimeout> | null = null
+    let raf: number | null = null
+    let scrollContainer: HTMLElement | null = null
+    let scrollListener: (() => void) | null = null
 
-        for (let level = 1; level <= 6; level += 1) {
-          const nodes = scrollContainer.querySelectorAll(`h${level}`)
-          // for...of (not forEach) so TS keeps `best` typed as the declared
-          // union across iterations — forEach callback narrows reassigned
-          // `let`s down to `never` on the second assignment.
-          for (const [idx, node] of Array.from(nodes).entries()) {
-            if (!(node instanceof HTMLElement)) continue
-            const top = node.getBoundingClientRect().top
-            if (top <= activeLimit && (best === null || top > best.top)) {
-              best = {
-                heading: { level, levelIndex: idx, line: 0, text: node.textContent ?? '' },
-                top
-              }
+    const pickActive = (): void => {
+      if (!scrollContainer) return
+      // Skip while a click-driven scroll is settling.
+      if (Date.now() < scrollLockUntilRef.current) return
+
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const viewportH = scrollContainer.clientHeight
+      // Active band: the top 40% of the visible scroll area. A heading
+      // becomes active as soon as its top edge scrolls up past the 40% line;
+      // this matches the "section the user is currently reading" UX used by
+      // Notion / Typora / VSCode Outline.
+      const activeLimit = containerRect.top + viewportH * 0.4
+
+      let best: { heading: Heading; top: number } | null = null
+
+      for (let level = 1; level <= 6; level += 1) {
+        const nodes = scrollContainer.querySelectorAll(`h${level}`)
+        // for...of (not forEach) so TS keeps `best` typed as the declared
+        // union across iterations — forEach callback narrows reassigned
+        // `let`s down to `never` on the second assignment.
+        for (const [idx, node] of Array.from(nodes).entries()) {
+          if (!(node instanceof HTMLElement)) continue
+          const top = node.getBoundingClientRect().top
+          if (top <= activeLimit && (best === null || top > best.top)) {
+            best = {
+              heading: { level, levelIndex: idx, line: 0, text: node.textContent ?? '' },
+              top
             }
           }
         }
-
-        setActiveHeading(best ? best.heading : null)
       }
 
-      const attachToContainer = (next: HTMLElement): void => {
-        // Tear down anything we previously attached to an old container.
-        io?.disconnect()
-        mo?.disconnect()
-        if (scrollContainer && scrollListener) {
-          scrollContainer.removeEventListener('scroll', scrollListener)
+      setActiveHeading(best ? best.heading : null)
+    }
+
+    const attachToContainer = (next: HTMLElement): void => {
+      // Tear down anything we previously attached to an old container.
+      io?.disconnect()
+      mo?.disconnect()
+      if (scrollContainer && scrollListener) {
+        scrollContainer.removeEventListener('scroll', scrollListener)
+      }
+
+      scrollContainer = next
+
+      // We don't actually use the IO callback anymore — the scroll listener
+      // and MutationObserver already cover all the events we need (scroll,
+      // DOM mutation) and `pickActive` is fully deterministic from layout.
+      // But we still want to observe so the browser batches Intersection
+      // notifications efficiently. Keeping the observer is cheap and gives
+      // us a redundant trigger when headings enter/leave the viewport.
+      io = new IntersectionObserver(pickActive, {
+        root: scrollContainer,
+        rootMargin: '0px 0px -60% 0px',
+        threshold: [0, 1]
+      })
+
+      const observeHeadings = (): void => {
+        if (!scrollContainer || !io) return
+        for (let level = 1; level <= 6; level += 1) {
+          scrollContainer.querySelectorAll(`h${level}`).forEach((node) => {
+            if (node instanceof HTMLElement) io!.observe(node)
+          })
         }
+      }
 
-        scrollContainer = next
-
-        // We don't actually use the IO callback anymore — the scroll listener
-        // and MutationObserver already cover all the events we need (scroll,
-        // DOM mutation) and `pickActive` is fully deterministic from layout.
-        // But we still want to observe so the browser batches Intersection
-        // notifications efficiently. Keeping the observer is cheap and gives
-        // us a redundant trigger when headings enter/leave the viewport.
-        io = new IntersectionObserver(pickActive, {
-          root: scrollContainer,
-          rootMargin: '0px 0px -60% 0px',
-          threshold: [0, 1]
-        })
-
-        const observeHeadings = (): void => {
-          if (!scrollContainer || !io) return
-          for (let level = 1; level <= 6; level += 1) {
-            scrollContainer.querySelectorAll(`h${level}`).forEach((node) => {
-              if (node instanceof HTMLElement) io!.observe(node)
-            })
-          }
-        }
-
+      observeHeadings()
+      // Crepe renders headings asynchronously after `create()`. Watching the
+      // subtree lets us pick up newly created `<hN>` elements and recompute
+      // the active heading whenever the DOM mutates underneath us.
+      mo = new MutationObserver(() => {
         observeHeadings()
-        // Crepe renders headings asynchronously after `create()`. Watching the
-        // subtree lets us pick up newly created `<hN>` elements and recompute
-        // the active heading whenever the DOM mutates underneath us.
-        mo = new MutationObserver(() => {
-          observeHeadings()
-          pickActive()
-        })
-        mo.observe(scrollContainer, { childList: true, subtree: true })
-
-        // Belt-and-suspenders: also re-evaluate on every scroll tick. Long
-        // bodies and elastic scroll can move the top heading without any IO
-        // entry change, and we want the highlight to keep following.
-        scrollListener = (): void => pickActive()
-        scrollContainer.addEventListener('scroll', scrollListener, { passive: true })
-
         pickActive()
-      }
+      })
+      mo.observe(scrollContainer, { childList: true, subtree: true })
 
-      const tryAttach = (): void => {
-        const editorPane = document.querySelector('[data-editor-pane="true"]')
-        const next = editorPane?.querySelector('[data-editor-scroll="true"]')
-        if (!(next instanceof HTMLElement)) return
-        if (next === scrollContainer) return
-        attachToContainer(next)
-      }
+      // Belt-and-suspenders: also re-evaluate on every scroll tick. Long
+      // bodies and elastic scroll can move the top heading without any IO
+      // entry change, and we want the highlight to keep following.
+      scrollListener = (): void => pickActive()
+      scrollContainer.addEventListener('scroll', scrollListener, { passive: true })
 
-      // Crepe mounts asynchronously; the container may not exist on the first
-      // synchronous pass. Try once now, once after a short delay, and once
-      // again on the next frame as a last-chance catch.
-      tryAttach()
-      initTimer = setTimeout(tryAttach, 150)
-      raf = requestAnimationFrame(tryAttach)
+      pickActive()
+    }
 
-      return () => {
-        if (initTimer) clearTimeout(initTimer)
-        if (raf !== null) cancelAnimationFrame(raf)
-        io?.disconnect()
-        mo?.disconnect()
-        if (scrollContainer && scrollListener) {
-          scrollContainer.removeEventListener('scroll', scrollListener)
-        }
-        scrollContainer = null
-        scrollListener = null
+    const tryAttach = (): void => {
+      const editorPane = document.querySelector('[data-editor-pane="true"]')
+      const next = editorPane?.querySelector('[data-editor-scroll="true"]')
+      if (!(next instanceof HTMLElement)) return
+      if (next === scrollContainer) return
+      attachToContainer(next)
+    }
+
+    // Crepe mounts asynchronously; the container may not exist on the first
+    // synchronous pass. Try once now, once after a short delay, and once
+    // again on the next frame as a last-chance catch.
+    tryAttach()
+    initTimer = setTimeout(tryAttach, 150)
+    raf = requestAnimationFrame(tryAttach)
+
+    return () => {
+      if (initTimer) clearTimeout(initTimer)
+      if (raf !== null) cancelAnimationFrame(raf)
+      io?.disconnect()
+      mo?.disconnect()
+      if (scrollContainer && scrollListener) {
+        scrollContainer.removeEventListener('scroll', scrollListener)
       }
-    }, [editorMode, currentDocument?.ref.id])
+      scrollContainer = null
+      scrollListener = null
+    }
+  }, [editorMode, currentDocument?.ref.id])
 
   return (
     <div className="flex h-screen w-screen bg-neutral-50 text-neutral-900 dark:bg-neutral-900 dark:text-white">
@@ -570,40 +629,46 @@ function App(): JSX.Element {
                 then triggers the reconnect flow from any tree interaction
                 (chevron, refresh) instead of failing silently. */}
             <WorkspacePanel>
-              <div className="flex-1 overflow-auto">
-                {activeRoot && (
-                  <FileTree
-                    root={activeRoot}
-                    rootRef={{
-                      id: activeRoot.id,
-                      rootId: activeRoot.id,
-                      type: activeRoot.type,
-                      path: activeRoot.path || '',
-                      name: activeRoot.name,
-                      isDirectory: true
-                    }}
-                  />
-                )}
-              </div>
-              {activeRoot?.path && (
+              {activeRoot && !collapsedRootIds.has(activeRoot.id) && (
                 <>
-                  <div
-                    className="group flex h-1 cursor-row-resize items-center justify-center bg-neutral-100 hover:bg-blue-200 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
-                    onMouseDown={startGitResize}
-                    title="Drag to resize"
-                  >
-                    <div className="h-0.5 w-8 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+                  <div className="flex-1 overflow-auto">
+                    <FileTree
+                      root={activeRoot}
+                      rootRef={{
+                        id: activeRoot.id,
+                        rootId: activeRoot.id,
+                        type: activeRoot.type,
+                        path: activeRoot.path || '',
+                        name: activeRoot.name,
+                        isDirectory: true
+                      }}
+                    />
                   </div>
-                  <div
-                    className="overflow-hidden"
-                    style={{
-                      height: gitExpanded ? gitPanelHeight : 'auto',
-                      minHeight: gitExpanded ? 120 : 'auto',
-                      maxHeight: gitExpanded ? 480 : 'auto'
-                    }}
-                  >
-                    <GitPanel root={activeRoot} expanded={gitExpanded} onExpandedChange={setGitExpanded} />
-                  </div>
+                  {activeRoot.path && (
+                    <>
+                      <div
+                        className="group flex h-1 cursor-row-resize items-center justify-center bg-neutral-100 hover:bg-blue-200 dark:bg-neutral-800 dark:hover:bg-blue-900/50"
+                        onMouseDown={startGitResize}
+                        title="Drag to resize"
+                      >
+                        <div className="h-0.5 w-8 rounded bg-neutral-300 group-hover:bg-blue-400 dark:bg-neutral-600" />
+                      </div>
+                      <div
+                        className="overflow-hidden"
+                        style={{
+                          height: gitExpanded ? gitPanelHeight : 'auto',
+                          minHeight: gitExpanded ? 120 : 'auto',
+                          maxHeight: gitExpanded ? 480 : 'auto'
+                        }}
+                      >
+                        <GitPanel
+                          root={activeRoot}
+                          expanded={gitExpanded}
+                          onExpandedChange={setGitExpanded}
+                        />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </WorkspacePanel>

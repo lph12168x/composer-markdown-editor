@@ -6,10 +6,16 @@ import { settingsClient } from '../services/settingsClient'
 interface WorkspaceState {
   workspace: Workspace
   activeRootId: string | null
+  /**
+   * Roots the user collapsed in the workspace list. Everything below that row
+   * (file tree, git panel) is hidden while its id is here.
+   */
+  collapsedRootIds: Set<string>
   addLocalRoot: (path: string, name?: string) => void
   addSshRoot: (root: WorkspaceRoot) => void
   removeRoot: (rootId: string) => void
   setActiveRoot: (rootId: string | null) => void
+  toggleRootCollapsed: (rootId: string) => void
   setWorkspaceName: (name: string) => void
   loadWorkspace: (workspace: Workspace, activeRootId?: string | null) => void
 }
@@ -30,6 +36,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     roots: []
   },
   activeRootId: null,
+  collapsedRootIds: new Set(),
 
   addLocalRoot: (path: string, name?: string) => {
     const root: WorkspaceRoot = {
@@ -67,6 +74,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set((state) => {
       const root = state.workspace.roots.find((r) => r.id === rootId)
       const remainingRoots = state.workspace.roots.filter((r) => r.id !== rootId)
+      const collapsed = new Set(state.collapsedRootIds)
+      collapsed.delete(rootId)
       if (root?.type === 'ssh' && !remainingRoots.some((r) => r.type === 'ssh')) {
         void useSshStore.getState().disconnect()
       }
@@ -76,6 +85,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           ...state.workspace,
           roots: remainingRoots
         },
+        collapsedRootIds: collapsed,
         activeRootId:
           state.activeRootId === rootId
             ? remainingRoots.find((r) => r.id !== rootId)?.id || null
@@ -88,6 +98,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveRoot: (rootId: string | null) => {
     set({ activeRootId: rootId })
+  },
+
+  toggleRootCollapsed: (rootId: string) => {
+    set((state) => {
+      const collapsed = new Set(state.collapsedRootIds)
+      if (collapsed.has(rootId)) {
+        collapsed.delete(rootId)
+      } else {
+        collapsed.add(rootId)
+      }
+      return { collapsedRootIds: collapsed }
+    })
   },
 
   setWorkspaceName: (name: string) => {

@@ -87,6 +87,7 @@ const electronAPI: ElectronAPI = {
         callback('open-recent-file', payload),
       'menu:open-recent-ssh': (_event: Electron.IpcRendererEvent, payload: unknown): void =>
         callback('open-recent-ssh', payload),
+      'menu:refresh-file': (): void => callback('refresh-file'),
       'menu:toggle-left-panel': (): void => callback('toggle-left-panel'),
       'menu:toggle-right-panel': (): void => callback('toggle-right-panel')
     }
