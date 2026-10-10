@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
 import { useWorkspaceStore } from '../stores/workspaceStore'
-import { useDocumentStore, isImageRef } from '../stores/fileStore'
+import { useDocumentStore, useFileTreeStore, isImageRef } from '../stores/fileStore'
 import { useSshStore } from '../stores/sshStore'
 import { useUiStore } from '../stores/uiStore'
 import { WorkspacePanel } from '../components/sidebar/WorkspacePanel'
@@ -46,6 +46,55 @@ function App(): JSX.Element {
     [addLocalRoot]
   )
   const activeRoot = workspace.roots.find((r) => r.id === activeRootId)
+  /**
+   * Reveal a freshly opened document in the sidebar: activate (and un-collapse)
+   * its root, expand the folders above it, then scroll its row into view.
+   * Keyboard focus stays where it was on purpose — the tree has no arrow-key
+   * navigation, so stealing focus would only break typing in the editor.
+   */
+  const revealDocumentInTree = useCallback(async (ref: FileRef): Promise<void> => {
+    const {
+      workspace: current,
+      activeRootId: currentRootId,
+      collapsedRootIds: collapsed
+    } = useWorkspaceStore.getState()
+    const root = current.roots.find((r) => r.id === ref.rootId)
+    if (!root) return
+
+    if (currentRootId !== root.id) useWorkspaceStore.getState().setActiveRoot(root.id)
+    if (collapsed.has(root.id)) useWorkspaceStore.getState().toggleRootCollapsed(root.id)
+
+    try {
+      await useFileTreeStore.getState().revealRef(root, ref)
+    } catch (err) {
+      // A dropped SSH session shouldn't stop the file from opening.
+      console.error('Failed to reveal file in tree:', err)
+      return
+    }
+
+    const scroll = (): boolean => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('[data-tree-ref]')).find(
+        (el) => el.dataset.treeRef === ref.id
+      )
+      if (!row) return false
+      row.scrollIntoView({ block: 'nearest' })
+      return true
+    }
+
+    if (!scroll()) {
+      // The expanded rows commit on a later frame than the store update that
+      // produced them, so wait for the row instead of guessing a delay.
+      const sidebar = document.querySelector('aside')
+      if (sidebar) {
+        const observer = new MutationObserver(() => {
+          if (scroll()) observer.disconnect()
+        })
+        observer.observe(sidebar, { childList: true, subtree: true })
+        setTimeout(() => observer.disconnect(), 1000)
+      }
+    }
+  }, [])
+
   // View ▸ Refresh File: re-read the active document from disk so content
   // written by another application shows up without reopening the tab.
   const refreshActiveDocument = useCallback(async (): Promise<void> => {
@@ -110,7 +159,10 @@ function App(): JSX.Element {
       }
 
       const ref: FileRef = {
-        id: `local:${filePath}`,
+        // Match the ids the file tree builds for the same path, so a file
+        // opened from the dialog, a drop or the recent list is recognised as
+        // the active row instead of becoming a second tab for one file.
+        id: root ? `${root.id}:${filePath}` : `local:${filePath}`,
         rootId: root?.id || 'drop',
         type: 'local',
         path: filePath,
@@ -125,8 +177,9 @@ function App(): JSX.Element {
         const content = await fileSystemClient.readFile(ref)
         openDocument(ref, content)
       }
+      await revealDocumentInTree(ref)
     },
-    [addLocalRoot, openDocument, openImageDocument, setActiveRoot]
+    [addLocalRoot, openDocument, openImageDocument, revealDocumentInTree, setActiveRoot]
   )
 
   const startLeftResize = useCallback(
@@ -239,7 +292,8 @@ function App(): JSX.Element {
     }
   }, [loadWorkspace])
 
-  // Open files dispatched from the file tree.
+  // Open files dispatched from the file tree, the recent-files menu, drag-and-drop
+  // and the remote picker; reveal the opened file in the sidebar.
   useEffect(() => {
     const handleOpen = async (e: Event): Promise<void> => {
       const ref = (e as CustomEvent).detail as FileRef
@@ -251,6 +305,7 @@ function App(): JSX.Element {
           const content = await fileSystemClient.readFile(ref)
           openDocument(ref, content)
         }
+        await revealDocumentInTree(ref)
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to open file'
         window.alert(message)
@@ -260,7 +315,7 @@ function App(): JSX.Element {
 
     window.addEventListener('file:open', handleOpen)
     return () => window.removeEventListener('file:open', handleOpen)
-  }, [openDocument, openImageDocument])
+  }, [openDocument, openImageDocument, revealDocumentInTree])
 
   // Keyboard shortcuts: open folder, save (in EditorPane), settings.
   useEffect(() => {

@@ -204,6 +204,7 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
   return (
     <li onContextMenu={handleContextMenu}>
       <button
+        data-tree-ref={ref.id}
         onClick={handleToggle}
         onDoubleClick={handleDoubleClick}
         className={`flex w-full items-center gap-1 px-2 py-1 text-sm ${
@@ -229,7 +230,9 @@ export function TreeNode({ root, ref, depth = 0, activeRefId = null }: TreeNodeP
           <FileText size={14} className="text-neutral-500" />
         )}
 
-        <span className={`truncate ${ref.isDirectory ? '' : 'text-neutral-700 dark:text-neutral-300'}`}>
+        <span
+          className={`truncate ${ref.isDirectory ? '' : 'text-neutral-700 dark:text-neutral-300'}`}
+        >
           {ref.name}
         </span>
 

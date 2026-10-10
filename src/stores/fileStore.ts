@@ -11,6 +11,7 @@ interface FileTreeState {
   loadingNodes: Set<string>
   getChildren: (root: WorkspaceRoot, ref: FileRef) => Promise<FileRef[]>
   refreshNode: (root: WorkspaceRoot, ref: FileRef) => Promise<FileRef[]>
+  revealRef: (root: WorkspaceRoot, ref: FileRef) => Promise<void>
   setExpanded: (refId: string, expanded: boolean) => void
   clearTree: (rootId?: string) => void
 }
@@ -66,6 +67,40 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       }
       return { expandedNodes }
     })
+  },
+
+  /**
+   * Expand every folder on the way to `ref` so a file opened outside the tree
+   * (open dialog, drag-and-drop, recent files, remote picker) is visible in the
+   * sidebar. Walks the listings returned by `getChildren` rather than
+   * reconstructing paths, so local and SSH roots behave identically.
+   */
+  revealRef: async (root: WorkspaceRoot, ref: FileRef) => {
+    const { getChildren, setExpanded } = get()
+    const base = root.path ?? ''
+    const relative = ref.path.startsWith(base) ? ref.path.slice(base.length) : ref.path
+    const folders = relative.split(/[/\\]/).filter(Boolean).slice(0, -1)
+
+    const rootRef: FileRef = {
+      id: root.id,
+      rootId: root.id,
+      type: root.type,
+      path: base,
+      name: root.name,
+      isDirectory: true
+    }
+    await getChildren(root, rootRef)
+    setExpanded(root.id, true)
+
+    let parentId = root.id
+    for (const folder of folders) {
+      const children = get().treeCache.get(parentId) ?? []
+      const child = children.find((entry) => entry.isDirectory && entry.name === folder)
+      if (!child) return
+      await getChildren(root, child)
+      setExpanded(child.id, true)
+      parentId = child.id
+    }
   },
 
   clearTree: (rootId?: string) => {
