@@ -4,6 +4,7 @@ import { useDocumentStore } from '../../stores/fileStore'
 import { useUiStore } from '../../stores/uiStore'
 import { fileSystemClient } from '../../services/fileSystemClient'
 import { APP_CHANNELS } from '../../types/ipc'
+import { recallScroll, rememberScroll, scrollMemoryKey } from '../../utils/scrollMemory'
 import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownPreview } from './MarkdownPreview'
 import { SourceEditor } from './SourceEditor'
@@ -38,6 +39,7 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
     closeDocument
   } = useDocumentStore()
   const { editorMode, diffTarget, setEditorMode } = useUiStore()
+  const paneRef = useRef<HTMLDivElement>(null)
 
   // Find-bar state. The bar is opened by Cmd/Ctrl+F and is only meaningful
   // for text documents (markdown / source); image tabs hide it.
@@ -132,8 +134,74 @@ export function EditorPane({ onActiveHeadingChange }: EditorPaneProps = {}): JSX
     }
   }, [editorMode, enterSourceMode, document?.kind])
 
+  /**
+   * Per-document reading position.
+   *
+   * Each editor owns its scroll container, and the keyed ones (WYSIWYG /
+   * source) remount on every tab switch, so the element is re-resolved from
+   * the DOM on each attempt rather than captured once. Saving goes through a
+   * capture listener on the pane root because scroll events don't bubble and
+   * CodeMirror can rebuild its scroller: a detached element would otherwise
+   * keep firing events nobody sees.
+   */
+  const docId = document?.ref.id ?? null
+  const docRevision = document?.revision ?? 0
+  useEffect(() => {
+    const pane = paneRef.current
+    if (!pane || !docId || editorMode === 'diff') return
+
+    const key = scrollMemoryKey(docId, editorMode)
+    let settled = false
+    let scrolled = false
+    const timers: ReturnType<typeof setTimeout>[] = []
+
+    const handleScroll = (event: Event): void => {
+      const target = event.target
+      if (!(target instanceof HTMLElement) || !target.closest('[data-editor-scroll="true"]')) return
+      scrolled = true
+      rememberScroll(key, target.scrollTop)
+    }
+    pane.addEventListener('scroll', handleScroll, true)
+
+    const restore = (): void => {
+      // Stop as soon as anything scrolls: our own assignment produces the
+      // event, so this also ends the retry loop once the offset has landed.
+      if (settled || scrolled) return
+      const holder = pane.querySelector<HTMLElement>('[data-editor-scroll="true"]')
+      if (!holder) return
+      const cmScroller = holder.querySelector<HTMLElement>('.cm-scroller')
+      // CodeMirror builds its own scroller a frame later; setting the offset on
+      // the wrapper would just be ignored.
+      if (holder.classList.contains('source-editor') && !cmScroller) return
+      const scroller = cmScroller ?? holder
+
+      const target = recallScroll(key)
+      const max = scroller.scrollHeight - scroller.clientHeight
+      // Crepe fills its container asynchronously, so an offset that is not
+      // reachable yet means the content is not laid out — try again later.
+      if (target > 0 && max === 0) return
+      const applied = Math.min(target, max)
+      if (scroller.scrollTop === applied) {
+        settled = true
+        return
+      }
+      // Always assigned, including the zero case: the preview container is
+      // reused across tabs and would otherwise keep the previous position.
+      scroller.scrollTop = applied
+    }
+
+    restore()
+    // 30ms covers ProseMirror's first paint; 300ms covers a slow Mermaid swap.
+    ;[30, 120, 300].forEach((delay) => timers.push(setTimeout(restore, delay)))
+
+    return () => {
+      pane.removeEventListener('scroll', handleScroll, true)
+      timers.forEach(clearTimeout)
+    }
+  }, [docId, docRevision, editorMode])
+
   return (
-    <div className="flex h-full flex-col" data-editor-pane="true">
+    <div ref={paneRef} className="flex h-full flex-col" data-editor-pane="true">
       <div className="flex items-center justify-between border-b border-neutral-200 bg-white px-2 py-1.5 dark:border-neutral-700 dark:bg-neutral-900">
         <div className="flex flex-1 items-center gap-1 overflow-x-auto pr-2">
           {documents.map((doc) => {
